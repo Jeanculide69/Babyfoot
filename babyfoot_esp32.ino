@@ -1,3 +1,9 @@
+/* 
+ * BABYFOOT DMA SANDBOX V1.22
+ * Cible : ESP32 Core v3.3.8
+ * Affichage : HUB75 64x32 via ESP32-HUB75-MatrixPanel-I2S-DMA
+ * Animations : Echantillonnage 15 frames sur toute la durée du GIF
+ */
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 
 // --- CONFIGURATION DALLE LED ---
