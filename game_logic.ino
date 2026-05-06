@@ -103,21 +103,29 @@ void score_screen_starwars(bool reset = false) {
   matrix->setTextColor(C_YELLOW);
   matrix->setCursor(ball > 9 ? 28 : 31, 19); matrix->print(ball);
 
-  // 4. COMBATTANTS
+  // 4. COMBATTANTS (Version Agrandie 6px)
   extern void updateFighter(int id, int x, int y, uint16_t color);
-  updateFighter(0, 10, 28, C_BLUE);
-  updateFighter(1, 50, 28, C_RED);
+  updateFighter(0, 10, 26, C_BLUE);
+  updateFighter(1, 50, 26, C_RED);
 }
 
 void updateFighter(int id, int x, int y, uint16_t color) {
   static int pose[2] = {0, 0};
   pose[id] = (pose[id] + 1) % 4;
-  matrix->drawPixel(x, y, color);
-  matrix->drawPixel(x, y+1, C_WHITE); matrix->drawPixel(x, y+2, C_WHITE);
-  if (pose[id] < 2) { matrix->drawPixel(x-1, y+3, C_WHITE); matrix->drawPixel(x+1, y+3, C_WHITE); }
-  else { matrix->drawPixel(x, y+3, C_WHITE); }
+  
+  matrix->drawPixel(x, y, color); // Tête
+  matrix->drawFastVLine(x, y+1, 3, C_WHITE); // Corps élancé (3px)
+  
+  // Grandes Jambes Animées (2px)
+  if (pose[id] < 2) {
+    matrix->drawPixel(x-1, y+4, C_WHITE); matrix->drawPixel(x-2, y+5, C_WHITE); // Jambe L
+    matrix->drawPixel(x+1, y+4, C_WHITE); matrix->drawPixel(x+2, y+5, C_WHITE); // Jambe R
+  } else {
+    matrix->drawFastVLine(x, y+4, 2, C_WHITE); // Jambes droites
+  }
+  
   int dir = (id == 0) ? 1 : -1;
-  matrix->drawLine(x+dir, y+1, x+(dir*4), y+1, color);
+  matrix->drawLine(x+dir, y+2, x+(dir*5), y+2, color); // Sabre long
 }
 
 void setupGame() { score_p1 = 0; score_p2 = 0; ball = 11; score_screen_starwars(true); }
