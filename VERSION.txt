@@ -1,9 +1,5 @@
-BABYFOOT FIRMWARE V10.0 STABLE
+0.2 STAR WARS - Final Stable Merge
+Base: V11.6/0.1 Organic Engine
+HUD: V12 Modern Cockpit & Bold Scores
 Date: 2026-05-06
-Status: FREEZE
-Features:
-- ESP32 HUB75 I2S DMA Driver
-- Star Wars Starfield HUD
-- Organic Jedi vs Sith Animation (TargetX System)
-- Balanced Score HUD (Right-aligned P2)
-- Hardware Pins: NeoPixel(26,14), Reset(25), Audio(12,13)
+Status: GOLD RELEASE
