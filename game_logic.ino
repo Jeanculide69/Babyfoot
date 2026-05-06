@@ -26,12 +26,18 @@ void drawBoldNumber(int n, int x, int y, uint16_t color) {
     return;
   }
   int val = abs(n) % 10;
-  if (n < 0) matrix->fillRect(x - 3, y + 5, 2, 2, color);
-  drawBoldDigit(val, x, y, color);
+  if (n < 0) {
+    matrix->fillRect(x, y + 5, 4, 2, color); // Vrai trait 4x2
+    drawBoldDigit(val, x + 5, y, color);    // Chiffre decalé après le moins
+  } else {
+    drawBoldDigit(val, x, y, color);
+  }
 }
 
 void drawScoreCentered(int n, int zoneX, int y, uint16_t color) {
-  int width = (n == 10 || n < 0) ? 20 : 16;
+  int width = 16;
+  if (n == 10) width = 20;
+  else if (n < 0) width = 21; // 4px (moins) + 1px (espace) + 16px (chiffre)
   int startX = zoneX + (32 - width) / 2;
   drawBoldNumber(n, startX, y, color);
 }
@@ -252,7 +258,8 @@ void score_screen_starwars(bool reset = false) {
     if (p2_v) drawScoreCentered(score_p2, 32, 12, C_RED);
     
     matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
-    if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
+    // Recentrage dynamique des balles : 26 pour 2 chiffres, 29 pour 1 chiffre
+    if (ball > 9) matrix->setCursor(26, 19); else matrix->setCursor(29, 19); 
     matrix->print(ball);
 
     needsFullRedraw = false;
