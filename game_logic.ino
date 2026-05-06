@@ -20,45 +20,62 @@ void drawBoldDigit(int n, int x, int y, uint16_t color) {
 
 void drawBoldNumber(int n, int x, int y, uint16_t color) {
   if (!matrix) return;
-  if (n == 10) {
-    matrix->fillRect(x, y, 2, 12, color);
-    drawBoldDigit(0, x + 4, y, color);
+  if (n < 0) {
+    matrix->fillRect(x, y + 5, 4, 2, color); // Trait moins
+    drawBoldDigit(abs(n) % 10, x + 5, y, color);
     return;
   }
-  int val = abs(n) % 10;
-  if (n < 0) {
-    matrix->fillRect(x, y + 5, 4, 2, color); // Vrai trait 4x2
-    drawBoldDigit(val, x + 5, y, color);    // Chiffre decalé après le moins
+  
+  if (n > 9) {
+    int d1 = n / 10;
+    int d2 = n % 10;
+    // On dessine les deux chiffres cote a cote
+    drawBoldDigit(d1, x, y, color);
+    drawBoldDigit(d2, x + 13, y, color); // 13px d'ecart (11px largeur + 2px espace)
   } else {
-    drawBoldDigit(val, x, y, color);
+    drawBoldDigit(n, x, y, color);
   }
 }
 
 void drawScoreCentered(int n, int zoneX, int y, uint16_t color) {
-  int width = 16;
-  if (n == 10) width = 20;
-  else if (n < 0) width = 21; // 4px (moins) + 1px (espace) + 16px (chiffre)
+  int width = 11; // Largeur par defaut d'un chiffre
+  if (n > 9) width = 24; // Deux chiffres + espace
+  else if (n < 0) width = 16; // Moins + chiffre
+  
   int startX = zoneX + (32 - width) / 2;
   drawBoldNumber(n, startX, y, color);
 }
 
-void drawCenteredText(String text, int zoneX, int y, uint16_t color) {
-  int len = text.length();
-  int charWidth = (len > 4) ? 5 : 6;
-  int totalWidth = len * charWidth;
+// --- DESSIN DES LETTRES BOLD (A-Z Simplifié) ---
+void drawTeamName(String name, int zoneX, uint16_t color) {
+  int len = name.length();
+  int totalWidth = len * 6; // Taille 1 = 6px par caractere
   int startX = zoneX + (32 - totalWidth) / 2;
-  matrix->setTextWrap(false); matrix->setTextColor(color);
-  matrix->setCursor(startX, y); matrix->print(text);
+  
+  matrix->setTextSize(1);
+  matrix->setTextWrap(false);
+  
+  if (len <= 4) {
+    // EFFET BOLD : On dessine deux fois avec 1px de décalage
+    matrix->setTextColor(color);
+    matrix->setCursor(startX, 1); matrix->print(name);
+    matrix->setCursor(startX + 1, 1); matrix->print(name);
+  } else {
+    // STYLE STANDARD
+    matrix->setTextColor(color);
+    matrix->setCursor(startX, 1); matrix->print(name);
+  }
 }
 #include <Arduino.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 
 extern MatrixPanel_I2S_DMA *matrix;
 
-// Variables globales
-volatile int score_p1 = 0, score_p2 = 0, ball = 11;
-volatile unsigned long statut_game = 0;
-volatile unsigned int inputs = 0;
+// Variables globales déportées dans le fichier principal
+extern String team1_name, team2_name;
+extern volatile int score_p1, score_p2, ball;
+extern volatile uint32_t statut_game;
+extern volatile unsigned int inputs;
 int sens_set = SENS_SET; 
 
 volatile int less_buttom_start = 0;
@@ -242,12 +259,11 @@ void score_screen_starwars(bool reset = false) {
     matrix->fillRect(0, 0, 64, 25, C_BLACK);
     
     // 1. DÉCOR COCKPIT ET NOMS AUTO-CENTRÉS
-    matrix->drawFastHLine(0, 0, 64, 0x18E3);
-    matrix->drawFastHLine(0, 9, 64, 0x18E3);
+    matrix->drawFastHLine(0, 0, 64, 0x18E3); matrix->drawFastHLine(0, 9, 64, 0x18E3);
     matrix->drawFastVLine(31, 0, 10, 0x18E3); // Séparateur cockpit
 
-    drawCenteredText("JEDI", 0, 1, C_BLUE);
-    drawCenteredText("SITH", 32, 1, C_RED);
+    drawTeamName(team1_name, 0, C_BLUE);
+    drawTeamName(team2_name, 32, C_RED);
 
     bool flash = (millis() / 250) % 2; 
     bool p1_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P1) || flash;

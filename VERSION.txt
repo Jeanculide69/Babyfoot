@@ -1,5 +1,8 @@
-0.2 STAR WARS - Final Stable Merge
-Base: V11.6/0.1 Organic Engine
-HUD: V12 Modern Cockpit & Bold Scores
-Date: 2026-05-06
-Status: GOLD RELEASE
+VERSION 0.3 STAR WARS - MASTER CONSOLE
+----------------------------------
+- Score illimite (0-99) avec centrage auto
+- Portail Web tout-en-un (Flash) ultra-rapide
+- Moteur de tournoi dynamique
+- Console de logs et telemetrie
+- HUD Adaptatif (Noms Bold)
+- Mise a jour OTA fonctionnelle

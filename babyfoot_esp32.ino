@@ -1,11 +1,32 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h>
+#include <HTTPUpdateServer.h>
 #include "config.h"
+#include "web_pages.h"
+
+// --- VARIABLES TOURNOI & WEB (DYNAMIQUE) ---
+String team1_name = "JEDI";
+String team2_name = "SITH";
+bool tournament_mode = false;
+
+// --- LOGS SYSTÈME ---
+String system_logs[20];
+int log_idx = 0;
+void addLog(String m) {
+  system_logs[log_idx % 20] = m;
+  log_idx++;
+  Serial.println("[LOG] " + m);
+}
+
+// Variables globales définies ici
+volatile int score_p1 = 0, score_p2 = 0, ball = 11;
+volatile uint32_t statut_game = 0;
+volatile unsigned int inputs = 0;
 
 MatrixPanel_I2S_DMA *matrix = nullptr;
-
-void addLog(String msg) { Serial.println(msg); }
 
 void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2) {
   uint16_t checksum = -(0xFF + 0x06 + cmd + 0x00 + p1 + p2);
@@ -23,64 +44,11 @@ volatile int target_vol = 25;
 unsigned long last_vol_ms = 0;
 
 WebServer server(80);
+HTTPUpdateServer httpUpdater;
 
-extern volatile int score_p1, score_p2, ball;
-extern volatile unsigned long statut_game;
-
-void handleStatus() {
-  String json = "{";
-  json += "\"p1\":" + String(score_p1) + ",";
-  json += "\"p2\":" + String(score_p2) + ",";
-  json += "\"ball\":" + String(ball) + ",";
-  json += "\"heap\":" + String(ESP.getFreeHeap()/1024);
-  json += "}";
+void handleStatusLegacy() {
+  String json = "{\"p1\":" + String(score_p1) + ",\"p2\":" + String(score_p2) + ",\"ball\":" + String(ball) + "}";
   server.send(200, "application/json", json);
-}
-
-void handleRoot() {
-  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Babyfoot Force Console</title>";
-  html += "<style>body{background:#0b0e14;color:#FFE000;font-family:'Segoe UI',sans-serif;text-align:center;margin:0;padding:20px;}";
-  html += ".card{background:#161b22;border-radius:15px;padding:20px;margin-bottom:20px;box-shadow:0 4px 15px rgba(0,0,0,0.5);border:1px solid #30363d;}";
-  html += ".score-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;}";
-  html += ".score-val{font-size:48px;font-weight:bold;text-shadow:0 0 10px currentColor;}";
-  html += ".btn{display:block;padding:15px;margin:10px 0;font-size:18px;font-weight:bold;border-radius:8px;text-decoration:none;transition:0.2s;border:2px solid;}";
-  html += ".jedi{color:#58a6ff;border-color:#58a6ff;background:rgba(88,166,255,0.1);}";
-  html += ".sith{color:#f85149;border-color:#f85149;background:rgba(248,81,73,0.1);}";
-  html += ".btn:active{transform:scale(0.95);opacity:0.8;}";
-  html += "#info{font-size:12px;color:#8b949e;margin-top:10px;}</style>";
-  html += "<script>function doAct(id){fetch('/action?id='+id);}";
-  html += "function setBright(v){fetch('/action?id=BR&val='+v);}";
-  html += "setInterval(()=>{fetch('/status').then(r=>r.json()).then(d=>{";
-  html += "document.getElementById('s1').innerText=d.p1;";
-  html += "document.getElementById('s2').innerText=d.p2;";
-  html += "document.getElementById('bl').innerText=d.ball;";
-  html += "document.getElementById('hp').innerText=d.heap+' KB';});},1000);</script></head><body>";
-  
-  html += "<div class='card'><h2>LIVE SCORE</h2><div class='score-grid'>";
-  html += "<div><div style='color:#58a6ff'>JEDI</div>";
-  html += "<div class='score-grid' style='grid-template-columns:1fr 2fr 1fr;align-items:center;'>";
-  html += "<div class='btn jedi' style='padding:5px' onclick='doAct(\"M1\")'>-</div>";
-  html += "<div id='s1' class='score-val' style='color:#58a6ff'>0</div>";
-  html += "<div class='btn jedi' style='padding:5px' onclick='doAct(\"P1\")'>+</div></div></div>";
-  
-  html += "<div><div style='color:#f85149'>SITH</div>";
-  html += "<div class='score-grid' style='grid-template-columns:1fr 2fr 1fr;align-items:center;'>";
-  html += "<div class='btn sith' style='padding:5px' onclick='doAct(\"M2\")'>-</div>";
-  html += "<div id='s2' class='score-val' style='color:#f85149'>0</div>";
-  html += "<div class='btn sith' style='padding:5px' onclick='doAct(\"P2\")'>+</div></div></div>";
-  
-  html += "</div><div style='font-size:20px'>BALLES: <span id='bl'>11</span></div></div>";
-
-  html += "<div class='card'><h2>LUMINOSITE</h2>";
-  html += "<input type='range' min='10' max='255' value='128' style='width:100%;height:30px;' onchange='setBright(this.value)'></div>";
-
-  html += "<div class='card'><h2>COMMANDES RAPIDES</h2>";
-  html += "<div class='score-grid'><div class='btn jedi' onclick='doAct(\"B1\")'>BUT</div><div class='btn sith' onclick='doAct(\"B2\")'>BUT</div></div>";
-  html += "<div class='score-grid'><div class='btn jedi' onclick='doAct(\"G1\")'>GAMELLE</div><div class='btn sith' onclick='doAct(\"G2\")'>GAMELLE</div></div>";
-  html += "<div class='btn' style='color:#fff;border-color:#fff;' onclick='doAct(\"OK\")'>START / RESET</div></div>";
-  
-  html += "<div id='info'>RAM: <span id='hp'>-</span> | babyfoot.local</div></body></html>";
-  server.send(200, "text/html", html);
 }
 
 extern void handleAction(String act);
@@ -89,8 +57,9 @@ extern void handleAction(String act);
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n[SYSTEM] Babyfoot Star Wars Starting...");
-
+  addLog("Systeme Pret ! babyfoot.local");
+  Serial.println("[SYSTEM] Ready.");
+  
   // Connexion WiFi à la Livebox
   WiFi.mode(WIFI_STA);
   WiFi.begin("Livebox-6E60", "gQszNPUotXSt7jKKH3");
@@ -113,21 +82,101 @@ void setup() {
     Serial.println("\n[WIFI] Connection failed. Check credentials.");
   }
 
-  server.on("/", handleRoot);
-  server.on("/status", handleStatus);
-  server.on("/action", []() {
-    if (server.hasArg("id")) {
-      String id = server.arg("id");
-      if (id == "BR" && server.hasArg("val")) {
-        int v = server.arg("val").toInt();
-        if (matrix) matrix->setPanelBrightness(v);
-        Serial.print("[WIFI] Brightness set to: "); Serial.println(v);
-      } else {
-        handleAction(id);
+  // --- ROUTES EMBARQUÉES (INSTANTANÉES) ---
+  server.on("/", HTTP_GET, []() {
+    server.send_P(200, "text/html", INDEX_HTML);
+  });
+
+  server.on("/tv", HTTP_GET, []() {
+    server.send_P(200, "text/html", TV_HTML);
+  });
+
+  server.on("/tournament", HTTP_GET, []() {
+    server.send_P(200, "text/html", TOURNAMENT_HTML);
+  });
+
+  server.on("/logs", HTTP_GET, []() {
+    server.send_P(200, "text/html", LOGS_HTML);
+  });
+
+  server.on("/api/logs", HTTP_GET, []() {
+    String out = "{\"logs\":[";
+    for(int i=0; i<20; i++) {
+      int idx = (log_idx - 1 - i + 20) % 20;
+      if(system_logs[idx] != "") {
+        if(i > 0) out += ",";
+        out += "{\"t\":\"" + String(millis()/1000) + "\",\"m\":\"" + system_logs[idx] + "\"}";
       }
     }
+    out += "]}";
+    server.send(200, "application/json", out);
+  });
+
+  server.on("/api/status", HTTP_GET, []() {
+    StaticJsonDocument<256> doc;
+    doc["p1"] = score_p1;
+    doc["p2"] = score_p2;
+    doc["ball"] = ball;
+    doc["t1"] = team1_name;
+    doc["t2"] = team2_name;
+    doc["mode"] = tournament_mode ? "tournament" : "classic";
+    doc["run"] = bitRead(statut_game, RUN);
+    String out; serializeJson(doc, out);
+    server.send(200, "application/json", out);
+  });
+
+  server.on("/api/save_settings", HTTP_POST, []() {
+    if (server.hasArg("t1")) team1_name = server.arg("t1");
+    if (server.hasArg("t2")) team2_name = server.arg("t2");
+    if (server.hasArg("vol")) target_vol = server.arg("vol").toInt();
+    if (server.hasArg("mode")) tournament_mode = (server.arg("mode") == "1");
+    
+    server.send(200, "text/plain", "Settings Saved");
+    Serial.println("[WEB] Settings Updated");
+  });
+
+  server.on("/settings", HTTP_GET, []() {
+    String h = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Settings</title>";
+    h += "<style>body{background:#0b0e14;color:#ffe000;font-family:sans-serif;padding:20px;} input{width:100%;padding:10px;margin:10px 0;background:#161b22;color:#fff;border:1px solid #30363d;}</style></head><body>";
+    h += "<h1>SETTINGS</h1><form action='/api/save_settings' method='POST'>";
+    h += "EQUIPE 1: <input name='t1' value='" + team1_name + "'>";
+    h += "EQUIPE 2: <input name='t2' value='" + team2_name + "'>";
+    h += "VOLUME (0-30): <input type='number' name='vol' value='" + String(target_vol) + "'>";
+    h += "MODE TOURNOI: <select name='mode' style='width:100%;padding:10px;'><option value='0'>OFF</option><option value='1'>ON</option></select><br><br>";
+    h += "<button type='submit' style='width:100%;padding:15px;background:#ffe000;font-weight:bold;'>ENREGISTRER</button></form>";
+    h += "<br><a href='/' style='color:#8b949e;'>Retour Console</a></body></html>";
+    server.send(200, "text/html", h);
+  });
+
+  server.on("/api/get_tournament", HTTP_GET, []() {
+    File file = LittleFS.open("/tournament.json", "r");
+    if (file) {
+      server.streamFile(file, "application/json");
+      file.close();
+    } else {
+      server.send(200, "application/json", "{\"teams\":[],\"matches\":[]}");
+    }
+  });
+
+  server.on("/api/set_tournament", HTTP_POST, []() {
+    if (server.hasArg("plain")) {
+      File file = LittleFS.open("/tournament.json", "w");
+      if (file) {
+        file.print(server.arg("plain"));
+        file.close();
+        server.send(200, "text/plain", "OK");
+      } else {
+        server.send(500, "text/plain", "Save Failed");
+      }
+    }
+  });
+  server.on("/action", HTTP_GET, []() {
+    String id = server.arg("id");
+    handleAction(id);
+    addLog("Action recue: " + id);
     server.send(200, "text/plain", "OK");
   });
+  httpUpdater.setup(&server);
   server.begin();
 
   // IMPULSION RESET HARDWARE (Obligatoire pour débloquer les capteurs)
@@ -157,6 +206,13 @@ void setup() {
   };
 
   HUB75_I2S_CFG mxconfig(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN, _pins);
+
+  // Initialisation LittleFS
+  if(!LittleFS.begin(true)){
+    Serial.println("[SYSTEM] LittleFS Mount Failed");
+  } else {
+    Serial.println("[SYSTEM] LittleFS Mounted");
+  }
 
   matrix = new MatrixPanel_I2S_DMA(mxconfig);
   matrix->begin();
