@@ -20,20 +20,23 @@ Platform p_ball = {26, 18, 12, 8};
 struct Laser { float x, y, vx; bool active; uint16_t color; };
 Laser lasers[MAX_LASERS];
 
-// --- CLASSE FIGHTER (IA & Physique) ---
-class Fighter {
+extern bool isAnimationActive();
+extern void updateAnimations();
+
+// --- CLASSE DUEL FIGHTER (IA & Physique) ---
+class DuelFighter {
 public:
   float x, y, vx, vy;
   int id; uint16_t color;
   bool facingRight;
   unsigned long lastShoot = 0;
 
-  Fighter(int _id, float _x, float _y, uint16_t _c) {
+  DuelFighter(int _id, float _x, float _y, uint16_t _c) {
     id = _id; x = _x; y = _y; color = _c;
     vx = 0; vy = 0; facingRight = (id == 0);
   }
 
-  void update(Fighter &opponent) {
+  void update(DuelFighter &opponent) {
     // 1. IA Organique
     if (x < opponent.x - 6) { vx += RUN_SPEED; facingRight = true; }
     else if (x > opponent.x + 6) { vx -= RUN_SPEED; facingRight = false; }
@@ -92,8 +95,8 @@ public:
   }
 };
 
-Fighter jedi(0, 10, 28, HUD_BLUE);
-Fighter sith(1, 50, 28, HUD_RED);
+DuelFighter jedi(0, 10, 28, HUD_BLUE);
+DuelFighter sith(1, 50, 28, HUD_RED);
 
 // --- DESSIN DES CHIFFRES MODERN BOLD ---
 const uint8_t BOLD_BITMAPS[10][6] = {
@@ -122,17 +125,18 @@ void drawBoldNumber(int n, int x, int y, uint16_t color) {
 }
 
 // --- LOGIQUE DE JEU ET ACTIONS ---
-volatile int score_p1 = 0, score_p2 = 0, ball = 11;
+extern volatile int score_p1, score_p2, ball;
 extern volatile uint32_t statut_game;
+extern volatile unsigned int inputs;
 extern void requestAnimation(int type);
-extern void playSFX(int id, bool loop = false);
+extern void playSFX(int id, bool loop);
 
 void handleAction(String act) {
-  if (act == "B1") { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); }
-  if (act == "B2") { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); }
-  if (act == "G1") { score_p2--; playSFX(4); requestAnimation(ANIM_GAM_J1); }
-  if (act == "G2") { score_p1--; playSFX(4); requestAnimation(ANIM_GAM_J2); }
-  if (act == "OK") { bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); playSFX(1, true); }
+  if (act == "B1") { score_p1++; ball--; playSFX(2, false); requestAnimation(ANIM_BUT_J1); }
+  if (act == "B2") { score_p2++; ball--; playSFX(3, false); requestAnimation(ANIM_BUT_J2); }
+  if (act == "G1") { score_p2--; playSFX(4, false); requestAnimation(ANIM_GAM_J1); }
+  if (act == "G2") { score_p1--; playSFX(4, false); requestAnimation(ANIM_GAM_J2); }
+  if (act == "OK") { bitSet(statut_game, RUN); bitClear(statut_game, START_GAME); playSFX(1, true); }
   if (act == "P1") score_p1++;
   if (act == "M1") score_p1--; 
   if (act == "P2") score_p2++;
@@ -189,13 +193,18 @@ void handleGameLogic() {
   lastTick = millis();
 
   extern void read_inputs_old();
-  read_inputs_old();
+  read_inputs_old(); // <--- REAJOUT DE L'APPEL
   
   extern volatile unsigned int inputs;
   if (bitRead(inputs, 11)) handleAction("B1");
   if (bitRead(inputs, 13)) handleAction("B2");
   if (bitRead(inputs, 12)) handleAction("G1");
   if (bitRead(inputs, 14)) handleAction("G2");
+  
+  // Boutons tactiles (Bits 0, 1, 2)
+  if (bitRead(inputs, 0))  handleAction("OK");
+  if (bitRead(inputs, 1))  handleAction("M1"); // Ou une autre action de réglage
+  if (bitRead(inputs, 2))  handleAction("P1");
 
   if (!isAnimationActive() && !bitRead(statut_game, RUN)) {
     extern void drawAnimStandby(); drawAnimStandby();

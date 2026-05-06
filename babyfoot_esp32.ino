@@ -24,8 +24,12 @@ unsigned long last_vol_ms = 0;
 
 WebServer server(80);
 
-extern volatile int score_p1, score_p2, ball;
-extern volatile unsigned long statut_game;
+// --- VARIABLES GLOBALES (DEFINITIONS REELLES) ---
+volatile int score_p1 = 0;
+volatile int score_p2 = 0;
+volatile int ball = 11;
+volatile uint32_t statut_game = 0;
+volatile unsigned int inputs = 0;
 
 void handleStatus() {
   String json = "{";
@@ -186,6 +190,36 @@ void webTask(void *pvParameters) {
     server.handleClient();
     delay(10); // Laisse le processeur respirer
   }
+}
+
+void playSFX(int id, bool loop = false) {
+  if (id <= 0) return;
+  // Dossier 01, fichier id.mp3
+  sendDFCommand(loop ? 0x08 : 0x12, 0x01, id); 
+  Serial.printf("[AUDIO] Play SFX: %03d (Loop: %d)\n", id, loop);
+}
+
+void read_inputs_old() {
+  unsigned int current_inputs = 0;
+  
+  // Lecture brute des capteurs (Inversé car pull-up interne/externe probable)
+  if (!digitalRead(GOAL_LEFT)) bitSet(current_inputs, 3);
+  if (!digitalRead(GAMELLE_LEFT)) bitSet(current_inputs, 4);
+  if (!digitalRead(GOAL_RIGHT)) bitSet(current_inputs, 5);
+  if (!digitalRead(GAMELLE_RIGHT)) bitSet(current_inputs, 6);
+  
+  if (!digitalRead(BTN_OK)) bitSet(current_inputs, 0);
+  if (!digitalRead(BTN_LESS)) bitSet(current_inputs, 1);
+  if (!digitalRead(BTN_MORE)) bitSet(current_inputs, 2);
+
+  // Détection des fronts montants pour les buts (Bits 11-14)
+  for (int i = 3; i <= 6; i++) {
+    if (bitRead(current_inputs, i) && !bitRead(inputs, i)) {
+      bitSet(current_inputs, i + 8); // On marque le front montant
+    }
+  }
+
+  inputs = current_inputs;
 }
 
 void loop() {
