@@ -10,7 +10,21 @@ const uint8_t BOLD_BITMAPS[10][6] = {
 };
 
 void drawBoldNumber(int n, int x, int y, uint16_t color) {
-  if (n < 0 || n > 9 || !matrix) return;
+  if (!matrix) return;
+  
+  if (n == 10) { // Cas spécial pour le 10
+    // On dessine un '1' fin et un '0' Bold pour gagner de la place
+    matrix->fillRect(x, y, 2, 12, color); // Le '1'
+    drawBoldDigit(0, x + 4, y, color);    // Le '0'
+    return;
+  }
+
+  int val = abs(n) % 10;
+  if (n < 0) matrix->fillRect(x - 3, y + 5, 2, 2, color);
+  drawBoldDigit(val, x, y, color);
+}
+
+void drawBoldDigit(int n, int x, int y, uint16_t color) {
   for (int r = 0; r < 6; r++) {
     uint8_t row = BOLD_BITMAPS[n][r];
     for (int c = 0; c < 8; c++) {
@@ -221,11 +235,11 @@ void score_screen_starwars(bool reset = false) {
     bool p1_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P1) || flash;
     bool p2_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P2) || flash;
 
-    // Score JEDI BOLD
-    if (p1_v) drawBoldNumber(score_p1 % 10, score_p1 > 9 ? 1 : 5, 10, C_BLUE);
+    // Score JEDI BOLD (Recentré et support 10)
+    if (p1_v) drawBoldNumber(score_p1, (score_p1 >= 10) ? 3 : 7, 10, C_BLUE);
   
-    // Score SITH BOLD
-    if (p2_v) drawBoldNumber(score_p2 % 10, score_p2 > 9 ? 42 : 51, 10, C_RED);
+    // Score SITH BOLD (Recentré et support 10)
+    if (p2_v) drawBoldNumber(score_p2, (score_p2 >= 10) ? 38 : 41, 10, C_RED);
     
     matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
     if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
@@ -281,6 +295,7 @@ void handleAction(String act) {
   if (act == "M1") score_p1--; 
   if (act == "P2") score_p2++;
   if (act == "M2") score_p2--; 
+  if (act == "BIERE") { playSFX(4, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
@@ -410,6 +425,8 @@ void handleGameLogic() {
       matrix->fillScreen(C_BLACK); 
       if (score_p1 > score_p2) { playSFX(5); requestAnimation(ANIM_VIC_J1); } 
       else { playSFX(6); requestAnimation(ANIM_VIC_J2); }
+      // Pause de 5 secondes pour savourer la victoire
+      for(int i=0; i<100; i++) { if(isAnimationActive()) updateAnimations(); delay(50); }
     }
   }
 }
