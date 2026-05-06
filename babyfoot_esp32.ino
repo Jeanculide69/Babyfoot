@@ -1,7 +1,6 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include "config.h"
 
-// Configuration de la matrice DMA
 MatrixPanel_I2S_DMA *matrix = nullptr;
 
 void addLog(String msg) { Serial.println(msg); }
@@ -9,8 +8,7 @@ void addLog(String msg) { Serial.println(msg); }
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n\n[SYS] --- BABYFOOT CORE BOOT (V9.0 DMA) ---");
-  Serial.println("[SYS] Migration vers driver I2S DMA (Anti-Flicker)");
+  Serial.println("\n\n[SYS] --- BABYFOOT CORE BOOT (V9.1 DMA) ---");
 
   HUB75_I2S_CFG::i2s_pins _pins = {
     R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, 
@@ -22,6 +20,7 @@ void setup() {
 
   matrix = new MatrixPanel_I2S_DMA(mxconfig);
   matrix->begin();
+  matrix->setRotation(2); // <--- ROTATION 180° pour remettre l'ecran a l'endroit
   matrix->setBrightness8(60); 
   matrix->clearScreen();
 
@@ -29,12 +28,9 @@ void setup() {
   pinMode(GAMELLE_LEFT, INPUT);
   pinMode(GOAL_RIGHT, INPUT);
   pinMode(GAMELLE_RIGHT, INPUT);
-  
   pinMode(RESET_PIN, OUTPUT);
   digitalWrite(RESET_PIN, HIGH);
 
-  Serial.println("[SYS] Materiel pret (DMA Actif).");
-  
   extern void setupGame();
   setupGame();
 }

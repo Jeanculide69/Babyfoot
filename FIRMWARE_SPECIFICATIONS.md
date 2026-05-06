@@ -1,40 +1,47 @@
 # 🛡️ SPÉCIFICATIONS OBLIGATOIRES DU FIRMWARE BABYFOOT
 
-Ce document définit les contraintes matérielles et logicielles critiques qui **ne doivent jamais être modifiées** par un agent sans instruction explicite de l'utilisateur. Toute décision de conception doit impérativement respecter ces règles pour éviter de casser le matériel ou l'affichage.
+Ce document définit les contraintes matérielles et logicielles critiques qui **ne doivent jamais être modifiées** sans instruction explicite. Toute décision de conception doit respecter ces règles pour garantir la stabilité du système (DMA) et l'intégrité de l'affichage.
 
 ## 1. 📺 Système d'Affichage (Matrice LED)
 *   **Driver Obligatoire** : `ESP32-HUB75-MatrixPanel-I2S-DMA`.
-    *   *Raison* : C'est le seul driver capable de fournir une image 100% stable sans scintillement sur cette architecture. Ne JAMAIS repasser sur une librairie de type "Bit-Banging" (ex: `ESP32RGBmatrixPanel`).
-*   **Câblage HUB75 (NE PAS CHANGER)** :
+*   **Configuration de base** : 64x32 pixels, 1 panel.
+*   **Rotation (CRITIQUE)** : `matrix->setRotation(2)` (180°). Sans cela, l'affichage est inversé physiquement.
+*   **Câblage HUB75** :
     *   R1: 15 | G1: 2  | B1: 0
     *   R2: 4  | G2: 16 | B2: 17
     *   A: 5   | B: 18  | C: 19 | D: 21 | E: -1
     *   LAT: 3 | OE: 23 | CLK: 22
-*   **Format de couleur** : Adafruit GFX standard (RGB565).
 
-## 2. 🖐️ Entrées Utilisateur (Boutons Tactiles)
-*   **Méthode** : `touchRead()`.
-*   **Pins Dédiées** :
-    *   Bouton OK : **27**
-    *   Bouton MOINS (-) : **32**
-    *   Bouton PLUS (+) : **33**
-*   **Seuil de détection** : Fixé à **500** (Repos ~960, Touché ~200). Ne pas descendre sous 400 sans test physique.
+## 2. 🎨 Interface Utilisateur (Star Wars HUD)
+Le design actuel repose sur un thème "Jedi vs Sith".
+*   **Layout des Scores (y=10)** :
+    *   Score J1 (Bleu) : Gauche (x=1 ou x=5 si <10).
+    *   Score J2 (Rouge) : Droite (x=42 ou x=51 si <10).
+    *   Compteur de balles : Central (x=26, y=10).
+*   **Zone d'Animation de Combat (Bas de l'écran)** :
+    *   Zone réservée : **y=26 à y=31**.
+    *   Nettoyage : Utiliser `matrix->fillRect(0, 26, 64, 6, C_BLACK)` à chaque frame d'animation pour ne pas effacer les scores.
+*   **Format des Images/Animations** :
+    *   Données stockées en format **444** (12-bit).
+    *   Conversion obligatoire en **565** (RGB) avant l'affichage via le driver DMA.
+*   **Logique d'Animation des Jedis (Stabilité)** :
+    *   Les combattants doivent utiliser un système de `targetX` (cible aléatoire) pour éviter d'être statiques.
+    *   Amplitude : Ils doivent pouvoir couvrir tout le bas de l'écran (`x=2` à `x=61`).
+    *   Orientation : Toujours faire face à l'adversaire (dir calculé dynamiquement selon la position relative).
 
-## 3. ⚽ Capteurs de Buts (Digital)
-*   **Logique** : Actif HAUT (`HIGH` quand déclenché).
-*   **Pins Dédiées** :
-    *   But Droit : **36**
-    *   Gamelle Droite : **39**
-    *   But Gauche : **34**
-    *   Gamelle Gauche : **35**
-*   **Contrainte ESP32** : Ces pins sont "Input-only". Ne JAMAIS utiliser `INPUT_PULLUP` sur ces pins (erreur GPIO garantie). Utiliser `INPUT` simple.
+## 3. 🖐️ Entrées & Capteurs
+*   **Boutons Tactiles (`touchRead`)** :
+    *   OK: **27** | MOINS (-): **32** | PLUS (+): **33**
+    *   Seuil de détection : **500**.
+*   **Capteurs de Buts (Digital INPUT)** :
+    *   But Droit: **36** | Gamelle Droite: **39**
+    *   But Gauche: **34** | Gamelle Gauche: **35**
+    *   *Note* : Pins "Input-only", ne pas activer de Pull-up interne.
 
-## 4. ⚙️ Logique Système
-*   **Core ESP32** : Compatible avec la version 3.0+ (Utiliser la nouvelle API Timer si des timers matériels sont ajoutés).
-*   **États du Jeu** : Utiliser les masques de bits définis dans `config.h` pour `statut_game` afin de rester compatible avec le reste du code historique.
-
-## 5. 🔊 Audio (DFPlayer)
-*   **Pins** : RX: 12, TX: 13.
+## 4. ⚙️ Périphériques Additionnels
+*   **Audio (DFPlayer)** : RX: 12, TX: 13.
+*   **LED Strips (NeoPixel)** : Pin **26** (Strip 1) et Pin **14** (Strip 2).
+*   **Système** : Pin Reset hardware sur **25**.
 
 ---
-*Dernière mise à jour : 06/05/2026 - Version Stable DMA V9.0*
+*Dernière mise à jour : 06/05/2026 - Version Stable DMA V10.0 (FREEZE)*
