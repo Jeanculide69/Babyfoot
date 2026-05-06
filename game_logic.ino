@@ -258,8 +258,9 @@ void score_screen_starwars(bool reset = false) {
     if (p2_v) drawScoreCentered(score_p2, 32, 12, C_RED);
     
     matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
-    // Recentrage dynamique des balles : 26 pour 2 chiffres, 29 pour 1 chiffre
-    if (ball > 9) matrix->setCursor(26, 19); else matrix->setCursor(29, 19); 
+    // Compteur de balles miniaturisé (y=11)
+    matrix->drawRect(25, 11, 14, 9, 0x4208);
+    if (ball > 9) matrix->setCursor(26, 12); else matrix->setCursor(29, 12); 
     matrix->print(ball);
 
     needsFullRedraw = false;
