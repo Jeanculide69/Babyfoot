@@ -155,8 +155,8 @@ void handleGameLogic() {
   if (bitRead(statut_game, RUN) && ball <= 0) { 
     bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
     matrix->fillScreen(C_BLACK); 
-    if (score_p1 > score_p2) { playSFX(5); requestAnimation(ANIM_VIC_J1); } 
-    else { playSFX(6); requestAnimation(ANIM_VIC_J2); }
+    if (score_p1 > score_p2) { playSFX(5, false); requestAnimation(ANIM_VIC_J1); } 
+    else { playSFX(6, false); requestAnimation(ANIM_VIC_J2); }
     for(int i=0; i<100; i++) { if(isAnimationActive()) updateAnimations(); delay(50); }
   }
 }
