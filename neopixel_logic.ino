@@ -48,16 +48,18 @@ void edge_color(int x, int y, uint32_t color) {
 }
 
 void updateLEDs() {
-  if (isAnimationActive()) {
-    // En mode animation, les LEDs sont mises à jour pixel par pixel par edge_color()
-    // appelée depuis read_gif_file.ino. On fait juste le show() à la fin de la frame.
+  static bool wasAnimActive = false;
+  bool animActive = isAnimationActive();
+
+  if (animActive) {
     strip1.show();
     strip2.show();
+    wasAnimActive = true;
   } 
-  else {
-    // SINON BLANC PUR (Comme dans le old)
+  else if (wasAnimActive || millis() < 5000) { // On force le blanc au démarrage ou après une anim
     color_neo(0x00FFFFFF); 
     strip1.show();
     strip2.show();
+    wasAnimActive = false;
   }
 }

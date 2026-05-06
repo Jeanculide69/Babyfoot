@@ -56,8 +56,10 @@ void drawAnimStandby() {
       uint32_t c565 = matrix->color444(r, g, b);
       matrix->drawPixel(x, y, c565);
 
-      // Miroir Ambilight
-      edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+      // Miroir Ambilight UNIQUEMENT sur les bords
+      if (x == 0 || x == 63 || y == 31) {
+        edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+      }
     }
   }
 
@@ -79,8 +81,10 @@ void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
       uint8_t b = c & 0x0F;
       matrix->drawPixel(x, y, matrix->color444(r, g, b));
       
-      // Ambilight "Old School" : Miroir du bord
-      edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+      // Ambilight "Old School" : Miroir du bord UNIQUEMENT
+      if (x == 0 || x == 63 || y == 31) {
+        edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+      }
     }
   }
   anim_frame++;
