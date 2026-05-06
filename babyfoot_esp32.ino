@@ -172,7 +172,9 @@ void setup() {
   digitalWrite(RESET_PIN, HIGH);
 
   extern void setupGame();
+  extern void setupLEDs();
   setupGame();
+  setupLEDs();
 
   // Lancer le serveur web sur le Core 0
   xTaskCreatePinnedToCore(webTask, "WebTask", 4096, NULL, 1, NULL, 0);
@@ -188,5 +190,7 @@ void webTask(void *pvParameters) {
 
 void loop() {
   extern void handleGameLogic();
+  extern void updateLEDs();
   handleGameLogic();
+  updateLEDs();
 }

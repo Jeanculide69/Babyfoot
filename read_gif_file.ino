@@ -40,7 +40,7 @@ unsigned long last_anim_millis = 0;
 
 void drawAnimStandby() {
   if (!matrix) return;
-  if (millis() - last_anim_millis < 50) return;
+  if (millis() - last_anim_millis < 80) return;
   last_anim_millis = millis();
 
   for (int y = 0; y < 32; y++) {
@@ -64,7 +64,7 @@ void drawAnimStandby() {
 }
 
 void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
-  if (millis() - last_anim_ms < 60) return;
+  if (millis() - last_anim_ms < 100) return;
   last_anim_ms = millis();
   for (int y = 0; y < 32; y++) {
     for (int x = 0; x < 64; x++) {
