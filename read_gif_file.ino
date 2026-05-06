@@ -90,12 +90,12 @@ void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
 
 void updateAnimations() {
   switch(active_anim) {
-    case ANIM_BUT_J1: drawGenericAnim(but_bleu_data, BUT_BLEU_FRAME_COUNT, false); break;
-    case ANIM_BUT_J2: drawGenericAnim(but_rouge_data, BUT_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_GAM_J1: drawGenericAnim(gamelle_bleu_data, GAMELLE_BLEU_FRAME_COUNT, false); break;
-    case ANIM_GAM_J2: drawGenericAnim(gamelle_rouge_data, GAMELLE_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_BUT_J1: drawGenericAnim(but_rouge_data, BUT_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_BUT_J2: drawGenericAnim(but_bleu_data, BUT_BLEU_FRAME_COUNT, false); break;
+    case ANIM_GAM_J1: drawGenericAnim(gamelle_rouge_data, GAMELLE_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_GAM_J2: drawGenericAnim(gamelle_bleu_data, GAMELLE_BLEU_FRAME_COUNT, false); break;
     case ANIM_BIERE:  drawGenericAnim(pause_biere_data, PAUSE_BIERE_FRAME_COUNT, true); break;
-    case ANIM_VIC_J1: drawGenericAnim(victoire_bleu_data, VICTOIRE_BLEU_FRAME_COUNT, false); break;
-    case ANIM_VIC_J2: drawGenericAnim(victoire_rouge_data, VICTOIRE_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_VIC_J1: drawGenericAnim(victoire_rouge_data, VICTOIRE_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_VIC_J2: drawGenericAnim(victoire_bleu_data, VICTOIRE_BLEU_FRAME_COUNT, false); break;
   }
 }

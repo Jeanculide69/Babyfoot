@@ -153,23 +153,12 @@ void drawBlasters() {
 void score_screen_starwars(bool reset = false) {
   if (!matrix) return;
   
-  if (isAnimationActive()) {
-    updateAnimations();
-    return;
-  }
-
   static int last_s1 = -1, last_s2 = -1, last_b = -1;
   if (reset) { last_s1 = -1; last_s2 = -1; last_b = -1; return; }
 
-  if (last_s1 == -1) {
-    matrix->fillScreen(C_BLACK); matrix->setTextWrap(false); matrix->setTextSize(1);
-    matrix->setTextColor(C_BLUE); matrix->setCursor(1, 0); matrix->print("JEDI");
-    matrix->setTextColor(C_RED); matrix->setCursor(39, 0); matrix->print("SITH");
-    last_s1 = -2; 
-  }
 
-  // Scores a y=10 (Compromis pour laisser la place a l'animation dessous)
-  bool flash = (millis() / 250) % 2; // Pour le clignotement (4Hz)
+  // Scores a y=10
+  bool flash = (millis() / 250) % 2; 
   bool p1_visible = true;
   bool p2_visible = true;
 
@@ -178,25 +167,33 @@ void score_screen_starwars(bool reset = false) {
     if (bitRead(statut_game, SELECT_P2)) p2_visible = flash;
   }
 
-  if (score_p1 != last_s1 || (bitRead(statut_game, SCORE_ADJUST) && bitRead(statut_game, SELECT_P1))) { 
-    matrix->setTextSize(2); 
-    if (p1_visible) matrix->setTextColor(C_BLUE, C_BLACK); else matrix->setTextColor(C_BLACK, C_BLACK);
-    matrix->setCursor(score_p1 > 9 ? 1 : 5, 10); matrix->print(score_p1); 
-    last_s1 = p1_visible ? score_p1 : -2; 
+  // 1. Affichage de l'animation en arrière-plan
+  if (isAnimationActive()) {
+    updateAnimations();
   }
-  if (score_p2 != last_s2 || (bitRead(statut_game, SCORE_ADJUST) && bitRead(statut_game, SELECT_P2))) { 
-    matrix->setTextSize(2); 
-    if (p2_visible) matrix->setTextColor(C_RED, C_BLACK); else matrix->setTextColor(C_BLACK, C_BLACK);
-    matrix->setCursor(score_p2 > 9 ? 42 : 51, 10); matrix->print(score_p2); 
-    last_s2 = p2_visible ? score_p2 : -2; 
-  }
-  if (ball != last_b) { 
-    matrix->fillRect(26, 10, 12, 14, C_BLACK); 
-    matrix->setTextSize(1); matrix->setTextColor(C_YELLOW, C_BLACK); 
-    if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
-    matrix->print(ball); 
-    last_b = ball; 
-  }
+
+  // 2. Nettoyage de la zone HUD (y=0 à 25) pour supprimer les résidus de GIF
+  matrix->fillRect(0, 0, 64, 25, C_BLACK);
+
+  // 3. Dessin des Noms (JEDI / SITH)
+  matrix->setTextWrap(false); matrix->setTextSize(1);
+  matrix->setTextColor(C_BLUE); matrix->setCursor(1, 0); matrix->print("JEDI");
+  matrix->setTextColor(C_RED); matrix->setCursor(39, 0); matrix->print("SITH");
+
+  // 4. Dessin des Scores
+  matrix->setTextSize(2); 
+  if (p1_visible) matrix->setTextColor(C_BLUE); else matrix->setTextColor(C_BLACK);
+  matrix->setCursor(score_p1 > 9 ? 1 : 5, 10); matrix->print(score_p1); 
+  
+  if (p2_visible) matrix->setTextColor(C_RED); else matrix->setTextColor(C_BLACK);
+  matrix->setCursor(score_p2 > 9 ? 42 : 51, 10); matrix->print(score_p2); 
+  
+  // 5. Dessin du nombre de balles
+  matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
+  if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
+  matrix->print(ball);
+
+  last_s1 = score_p1; last_s2 = score_p2; last_b = ball;
 
   // --- NETTOYAGE LARGE (y=26 a 31) ---
   static unsigned long lastCombat = 0;
@@ -240,6 +237,10 @@ void handleAction(String act) {
   if (act == "G1") sim_g1 = true;
   if (act == "G2") sim_g2 = true;
   if (act == "OK") sim_ok = true;
+  if (act == "P1") score_p1++;
+  if (act == "M1") { if(score_p1 > 0) score_p1--; }
+  if (act == "P2") score_p2++;
+  if (act == "M2") { if(score_p2 > 0) score_p2--; }
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
@@ -307,9 +308,23 @@ void handleGameLogic() {
       requestAnimation(ANIM_NONE); 
       score_screen_starwars(true);
       playSFX(8, false); // Signal départ
-      delay(2000);       
-      playSFX(7, true);  // Ambiance match
+      Serial.println("[GAME] --- MATCH STARTED ! ---");
+      static unsigned long startMatchMs = millis();
     }
+  }
+
+  // --- GESTION NON-BLOQUANTE DU SON DE MATCH (008 -> 007) ---
+  static unsigned long startMatchTimer = 0;
+  static bool matchAmbienceTriggered = false;
+  if (bitRead(statut_game, RUN) && !bitRead(statut_game, START_GAME)) {
+      if (startMatchTimer == 0) startMatchTimer = millis();
+      if (!matchAmbienceTriggered && (millis() - startMatchTimer > 2500)) {
+          playSFX(7, true);
+          matchAmbienceTriggered = true;
+      }
+  } else {
+      startMatchTimer = 0;
+      matchAmbienceTriggered = false;
   }
 
   if (bitRead(statut_game, RUN)) {
@@ -333,10 +348,10 @@ void handleGameLogic() {
     if (bitRead(inputs, 8)) { bitSet(statut_game, SCORE_ADJUST); bitSet(statut_game, SELECT_P1); }
 
     // Buts et Gamelles (Bits 11 a 14 sont les FRONT MONTANTS)
-    if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); } 
-    if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); } 
-    if (bitRead(inputs, 12)) { if(score_p2 > 0) score_p2--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J1); } 
-    if (bitRead(inputs, 14)) { if(score_p1 > 0) score_p1--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J2); } 
+    if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+    if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+    if (bitRead(inputs, 12)) { if(score_p2 > 0) score_p2--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+    if (bitRead(inputs, 14)) { if(score_p1 > 0) score_p1--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
 
     // Reset Long OK
     if (ok_buttom_start > 20) { 

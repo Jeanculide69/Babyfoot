@@ -24,19 +24,62 @@ unsigned long last_vol_ms = 0;
 
 WebServer server(80);
 
+extern volatile int score_p1, score_p2, ball;
+extern volatile unsigned long statut_game;
+
+void handleStatus() {
+  String json = "{";
+  json += "\"p1\":" + String(score_p1) + ",";
+  json += "\"p2\":" + String(score_p2) + ",";
+  json += "\"ball\":" + String(ball) + ",";
+  json += "\"heap\":" + String(ESP.getFreeHeap()/1024);
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
 void handleRoot() {
-  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>";
-  html += "body { background: #000; color: #FFE000; font-family: sans-serif; text-align: center; }";
-  html += ".btn { display: block; width: 80%; margin: 20px auto; padding: 20px; font-size: 24px; border: 2px solid #FFE000; border-radius: 10px; background: #222; color: #FFE000; text-decoration: none; }";
-  html += ".btn:active { background: #444; } .jedi { border-color: #00F; color: #00F; } .sith { border-color: #F00; color: #F00; }";
-  html += "</style></head><body>";
-  html += "<h1>BABYFOOT CONTROL</h1>";
-  html += "<a href='/action?id=B1' class='btn jedi'>BUT JEDI (P1)</a>";
-  html += "<a href='/action?id=B2' class='btn sith'>BUT SITH (P2)</a>";
-  html += "<a href='/action?id=G1' class='btn jedi'>GAMELLE JEDI</a>";
-  html += "<a href='/action?id=G2' class='btn sith'>GAMELLE SITH</a>";
-  html += "<a href='/action?id=OK' class='btn' style='border-color:#FFF;color:#FFF;'>BOUTON OK</a>";
-  html += "</body></html>";
+  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Babyfoot Force Console</title>";
+  html += "<style>body{background:#0b0e14;color:#FFE000;font-family:'Segoe UI',sans-serif;text-align:center;margin:0;padding:20px;}";
+  html += ".card{background:#161b22;border-radius:15px;padding:20px;margin-bottom:20px;box-shadow:0 4px 15px rgba(0,0,0,0.5);border:1px solid #30363d;}";
+  html += ".score-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;}";
+  html += ".score-val{font-size:48px;font-weight:bold;text-shadow:0 0 10px currentColor;}";
+  html += ".btn{display:block;padding:15px;margin:10px 0;font-size:18px;font-weight:bold;border-radius:8px;text-decoration:none;transition:0.2s;border:2px solid;}";
+  html += ".jedi{color:#58a6ff;border-color:#58a6ff;background:rgba(88,166,255,0.1);}";
+  html += ".sith{color:#f85149;border-color:#f85149;background:rgba(248,81,73,0.1);}";
+  html += ".btn:active{transform:scale(0.95);opacity:0.8;}";
+  html += "#info{font-size:12px;color:#8b949e;margin-top:10px;}</style>";
+  html += "<script>function doAct(id){fetch('/action?id='+id);}";
+  html += "function setBright(v){fetch('/action?id=BR&val='+v);}";
+  html += "setInterval(()=>{fetch('/status').then(r=>r.json()).then(d=>{";
+  html += "document.getElementById('s1').innerText=d.p1;";
+  html += "document.getElementById('s2').innerText=d.p2;";
+  html += "document.getElementById('bl').innerText=d.ball;";
+  html += "document.getElementById('hp').innerText=d.heap+' KB';});},1000);</script></head><body>";
+  
+  html += "<div class='card'><h2>LIVE SCORE</h2><div class='score-grid'>";
+  html += "<div><div style='color:#58a6ff'>JEDI</div>";
+  html += "<div class='score-grid' style='grid-template-columns:1fr 2fr 1fr;align-items:center;'>";
+  html += "<div class='btn jedi' style='padding:5px' onclick='doAct(\"M1\")'>-</div>";
+  html += "<div id='s1' class='score-val' style='color:#58a6ff'>0</div>";
+  html += "<div class='btn jedi' style='padding:5px' onclick='doAct(\"P1\")'>+</div></div></div>";
+  
+  html += "<div><div style='color:#f85149'>SITH</div>";
+  html += "<div class='score-grid' style='grid-template-columns:1fr 2fr 1fr;align-items:center;'>";
+  html += "<div class='btn sith' style='padding:5px' onclick='doAct(\"M2\")'>-</div>";
+  html += "<div id='s2' class='score-val' style='color:#f85149'>0</div>";
+  html += "<div class='btn sith' style='padding:5px' onclick='doAct(\"P2\")'>+</div></div></div>";
+  
+  html += "</div><div style='font-size:20px'>BALLES: <span id='bl'>11</span></div></div>";
+
+  html += "<div class='card'><h2>LUMINOSITE</h2>";
+  html += "<input type='range' min='10' max='255' value='128' style='width:100%;height:30px;' onchange='setBright(this.value)'></div>";
+
+  html += "<div class='card'><h2>COMMANDES RAPIDES</h2>";
+  html += "<div class='score-grid'><div class='btn jedi' onclick='doAct(\"B1\")'>BUT</div><div class='btn sith' onclick='doAct(\"B2\")'>BUT</div></div>";
+  html += "<div class='score-grid'><div class='btn jedi' onclick='doAct(\"G1\")'>GAMELLE</div><div class='btn sith' onclick='doAct(\"G2\")'>GAMELLE</div></div>";
+  html += "<div class='btn' style='color:#fff;border-color:#fff;' onclick='doAct(\"OK\")'>START / RESET</div></div>";
+  
+  html += "<div id='info'>RAM: <span id='hp'>-</span> | babyfoot.local</div></body></html>";
   server.send(200, "text/html", html);
 }
 
@@ -71,10 +114,19 @@ void setup() {
   }
 
   server.on("/", handleRoot);
+  server.on("/status", handleStatus);
   server.on("/action", []() {
-    if (server.hasArg("id")) handleAction(server.arg("id"));
-    server.sendHeader("Location", "/");
-    server.send(303);
+    if (server.hasArg("id")) {
+      String id = server.arg("id");
+      if (id == "BR" && server.hasArg("val")) {
+        int v = server.arg("val").toInt();
+        if (matrix) matrix->setPanelBrightness(v);
+        Serial.print("[WIFI] Brightness set to: "); Serial.println(v);
+      } else {
+        handleAction(id);
+      }
+    }
+    server.send(200, "text/plain", "OK");
   });
   server.begin();
 
@@ -121,11 +173,20 @@ void setup() {
 
   extern void setupGame();
   setupGame();
+
+  // Lancer le serveur web sur le Core 0
+  xTaskCreatePinnedToCore(webTask, "WebTask", 4096, NULL, 1, NULL, 0);
+}
+
+// Tâche dédiée au serveur Web sur le Core 0
+void webTask(void *pvParameters) {
+  while (true) {
+    server.handleClient();
+    delay(10); // Laisse le processeur respirer
+  }
 }
 
 void loop() {
-  server.handleClient();
   extern void handleGameLogic();
   handleGameLogic();
-  delay(1);
 }
