@@ -26,6 +26,14 @@ void updateAudioFade() {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n[SYSTEM] Babyfoot Star Wars Starting...");
+
+  // IMPULSION RESET HARDWARE (Obligatoire pour débloquer les capteurs)
+  pinMode(25, OUTPUT);
+  digitalWrite(25, 0); 
+  delay(20);
+  digitalWrite(25, 1);
+
   Serial1.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
   delay(500);
   Serial.println("\n\n[SYS] --- BABYFOOT CORE BOOT (V10.0 DMA) ---");

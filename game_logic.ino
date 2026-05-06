@@ -17,6 +17,7 @@ volatile int ok_buttom_start = 0;
 Particle particles[5];
 Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};
 Fighter jedi2 = {45, 31, 0, 0, C_RED, -1, 34};
+Blaster blasters[4]; // Max 4 tirs simultanes
 
 extern void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2);
 extern volatile int cur_vol;
@@ -68,6 +69,15 @@ void updateFighter(Fighter &f, Fighter &other) {
   f.dir = (f.x < other.x) ? 1 : -1;
 
   if (f.state != 0 && f.frame % 12 == 0) f.state = 0;
+
+  // --- REACTION AUX BLASTERS (ESQUIVE) ---
+  for (int i = 0; i < 4; i++) {
+    if (blasters[i].active) {
+      if (abs(blasters[i].x - f.x) < 5 && f.state == 0) {
+        if (random(0, 10) > 5) f.state = (blasters[i].y > f.y - 2) ? 2 : 3; // Sauter ou s'accroupir
+      }
+    }
+  }
 }
 
 void drawStickman(Fighter &f) {
@@ -111,6 +121,31 @@ void drawParticles() {
       particles[i].x += particles[i].vx;
       particles[i].y += particles[i].vy;
       particles[i].life--;
+    }
+  }
+}
+
+void updateBlasters() {
+  for (int i = 0; i < 4; i++) {
+    if (!blasters[i].active) {
+      if (random(0, 500) < 5) { // Spawn aléatoire
+        blasters[i].active = true;
+        blasters[i].color = (random(0, 2) == 0) ? C_BLUE : C_RED;
+        blasters[i].vx = (blasters[i].color == C_BLUE) ? 1.5 : -1.5;
+        blasters[i].x = (blasters[i].vx > 0) ? -5 : 68;
+        blasters[i].y = random(27, 31);
+      }
+    } else {
+      blasters[i].x += blasters[i].vx;
+      if (blasters[i].x < -10 || blasters[i].x > 74) blasters[i].active = false;
+    }
+  }
+}
+
+void drawBlasters() {
+  for (int i = 0; i < 4; i++) {
+    if (blasters[i].active) {
+      matrix->drawLine((int)blasters[i].x, (int)blasters[i].y, (int)blasters[i].x + 2, (int)blasters[i].y, blasters[i].color);
     }
   }
 }
@@ -172,6 +207,8 @@ void score_screen_starwars(bool reset = false) {
     updateFighter(jedi2, jedi1);
     drawStickman(jedi1);
     drawStickman(jedi2);
+    updateBlasters();
+    drawBlasters();
     drawParticles();
   }
 }
@@ -195,138 +232,114 @@ bool check_touch(int pin, volatile int &counter) {
 }
 
 void read_inputs_old() {
-  bool ok_raw = check_touch(BTN_OK, ok_buttom_start);
+  // --- COMMANDES DE SIMULATION SERIE ---
+  static bool sim_ok = false, sim_b1 = false, sim_g1 = false, sim_b2 = false, sim_g2 = false;
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "B1") { sim_b1 = true; Serial.println("[SIM] BUT J1 Command"); }
+    if (cmd == "G1") { sim_g1 = true; Serial.println("[SIM] GAM J1 Command"); }
+    if (cmd == "B2") { sim_b2 = true; Serial.println("[SIM] BUT J2 Command"); }
+    if (cmd == "G2") { sim_g2 = true; Serial.println("[SIM] GAM J2 Command"); }
+    if (cmd == "OK") { sim_ok = true; Serial.println("[SIM] OK Command"); }
+  }
+
+  bool ok_raw = check_touch(BTN_OK, ok_buttom_start) || sim_ok;
   bool less_raw = check_touch(BTN_LESS, less_buttom_start);
   bool more_raw = check_touch(BTN_MORE, more_buttom_start);
 
-  // Inversion de la logique : BUT détecté si pin à 0 (Active-Low)
-  bool g_r = !digitalRead(GOAL_RIGHT), g_l = !digitalRead(GOAL_LEFT);
-  bool gam_r = !digitalRead(GAMELLE_RIGHT), gam_l = !digitalRead(GAMELLE_LEFT);
+  bool g_r = !digitalRead(GOAL_RIGHT) || sim_b2;
+  bool g_l = !digitalRead(GOAL_LEFT) || sim_b1;
+  bool gam_r = !digitalRead(GAMELLE_RIGHT) || sim_g2;
+  bool gam_l = !digitalRead(GAMELLE_LEFT) || sim_g1;
 
-  auto update_edge = [](int bit, bool current, const char* name) {
+  // Reset des flags de simulation
+  sim_ok = sim_b1 = sim_g1 = sim_b2 = sim_g2 = false;
+
+  auto update_edge = [](int bit, bool current) {
     if (current) { 
-      if (!bitRead(inputs, bit)) { 
-        bitSet(inputs, bit); bitSet(inputs, bit + 8); 
-        Serial.printf("[INPUT] %s : PRESSED\n", name);
-      } else { bitClear(inputs, bit + 8); } 
+      if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
+      else { bitClear(inputs, bit + 8); } 
     }
-    else { 
-      if (bitRead(inputs, bit)) Serial.printf("[INPUT] %s : RELEASED\n", name);
-      bitClear(inputs, bit); bitClear(inputs, bit + 8); 
-    }
+    else { bitClear(inputs, bit); bitClear(inputs, bit + 8); }
   };
 
-  update_edge(0, ok_raw, "OK"); 
-  update_edge(1, less_raw, "MOINS"); 
-  update_edge(2, more_raw, "PLUS");
+  update_edge(0, ok_raw); 
+  update_edge(1, less_raw); 
+  update_edge(2, more_raw);
 
-  // Détection des capteurs (Front montant pour éviter le double comptage)
-  auto update_sensor = [](int bit, bool current, const char* name) {
+  auto update_sensor = [](int bit, bool current) {
     if (current) { 
-      if (!bitRead(inputs, bit)) { 
-        bitSet(inputs, bit); bitSet(inputs, bit + 8); 
-        Serial.printf("[SENSOR] %s detected!\n", name);
-      } else { bitClear(inputs, bit + 8); }
+      if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
+      else { bitClear(inputs, bit + 8); }
     } else { bitClear(inputs, bit); bitClear(inputs, bit + 8); }
   };
 
-  update_sensor(3, g_l, "BUT_J1");
-  update_sensor(4, gam_l, "GAMELLE_J1");
-  update_sensor(5, g_r, "BUT_J2");
-  update_sensor(6, gam_r, "GAMELLE_J2");
-
-  // LOG DE DIAGNOSTIC CAPTEURS (Toutes les 1s)
-  static unsigned long last_diag = 0;
-  if (millis() - last_diag > 1000) {
-    Serial.printf("[DIAG] BUT_L(34):%d GAM_L(35):%d | BUT_R(36):%d GAM_R(39):%d | IO32:%d IO33:%d\n", 
-                  digitalRead(34), digitalRead(35), 
-                  digitalRead(36), digitalRead(39),
-                  digitalRead(32), digitalRead(33));
-    last_diag = millis();
-  }
+  update_sensor(3, g_l);
+  update_sensor(4, gam_l);
+  update_sensor(5, g_r);
+  update_sensor(6, gam_r);
 }
 
 void handleGameLogic() {
   read_inputs_old();
+
   extern void drawAnimStandby();
   if (bitRead(statut_game, START_GAME)) {
     if (isAnimationActive()) updateAnimations();
     else drawAnimStandby();
-    if (bitRead(inputs, 8)) {
+
+    if (bitRead(inputs, 8)) { // Touche OK
       score_p1 = 0; score_p2 = 0; ball = 11;
       bitClear(statut_game, START_GAME); bitSet(statut_game, RUN);
-      bitClear(inputs, 8); // <--- CORRECTION DOUBLE APPUI : On vide le bouton OK
-      requestAnimation(ANIM_NONE); // Stopper la biere
+      bitClear(inputs, 8); 
+      requestAnimation(ANIM_NONE); 
       score_screen_starwars(true);
-      playSFX(8, false); // Signal de départ (008.mp3)
-      delay(2000);       // Laisser le temps au signal (ajustez si besoin)
-      playSFX(7, true);  // Puis ambiance Podrace en BOUCLE
-      Serial.println("[GAME] --- MATCH STARTED ! ---");
+      playSFX(8, false); // Signal départ
+      delay(2000);       
+      playSFX(7, true);  // Ambiance match
     }
   }
+
   if (bitRead(statut_game, RUN)) {
-    // --- MODE CORRECTION MANUELLE ---
+    // Mode Correction
     if (bitRead(statut_game, SCORE_ADJUST)) {
       if (!bitRead(statut_game, PLAYER_CONFIRMED)) {
-        // Étape 1 : Choisir quel score clignote
-        if (bitRead(inputs, 9) || bitRead(inputs, 10)) { // PLUS ou MOINS change de cible
+        if (bitRead(inputs, 9) || bitRead(inputs, 10)) { 
           if (bitRead(statut_game, SELECT_P1)) { bitClear(statut_game, SELECT_P1); bitSet(statut_game, SELECT_P2); }
           else { bitSet(statut_game, SELECT_P1); bitClear(statut_game, SELECT_P2); }
         }
-        if (bitRead(inputs, 8)) { bitSet(statut_game, PLAYER_CONFIRMED); }
+        if (bitRead(inputs, 8)) bitSet(statut_game, PLAYER_CONFIRMED);
       } else {
-        // Étape 2 : Ajuster le score choisi
-        if (bitRead(inputs, 9)) { // MOINS = -1
-           if (bitRead(statut_game, SELECT_P1)) { if(score_p1 > 0) score_p1--; }
-           else { if(score_p2 > 0) score_p2--; }
-        }
-        if (bitRead(inputs, 10)) { // PLUS = +1
-           if (bitRead(statut_game, SELECT_P1)) score_p1++;
-           else score_p2++;
-        }
-        if (bitRead(inputs, 8)) { // Validation finale
-          bitClear(statut_game, SCORE_ADJUST);
-          bitClear(statut_game, PLAYER_CONFIRMED);
-          bitClear(statut_game, SELECT_P1);
-          bitClear(statut_game, SELECT_P2);
-          Serial.println("[GAME] Score Adjusted. Resuming match.");
-        }
+        if (bitRead(inputs, 9)) { if(score_p1 > 0 && bitRead(statut_game, SELECT_P1)) score_p1--; else if(score_p2 > 0) score_p2--; }
+        if (bitRead(inputs, 10)) { if(bitRead(statut_game, SELECT_P1)) score_p1++; else score_p2++; }
+        if (bitRead(inputs, 8)) { bitClear(statut_game, SCORE_ADJUST); bitClear(statut_game, PLAYER_CONFIRMED); }
       }
       score_screen_starwars();
-      return; // On stoppe la logique de match pendant la correction
+      return;
     }
 
-    // --- ENTREE EN MODE CORRECTION ---
-    if (bitRead(inputs, 8)) { // Appui OK court
-      bitSet(statut_game, SCORE_ADJUST);
-      bitSet(statut_game, SELECT_P1); // Par defaut sur P1
-      Serial.println("[GAME] Entering Manual Correction Mode...");
-    }
+    if (bitRead(inputs, 8)) { bitSet(statut_game, SCORE_ADJUST); bitSet(statut_game, SELECT_P1); }
 
-    // --- CONTROLES AUTOMATIQUES (CAPTEURS) ---
-    if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); } // But J1
-    if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); } // But J2
-    
-    // Règle Gamelle : -1 à l'adversaire et -1 balle
-    if (bitRead(inputs, 12)) { if(score_p2 > 0) score_p2--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J1); } // Gamelle J1 (impact J2)
-    if (bitRead(inputs, 14)) { if(score_p1 > 0) score_p1--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J2); } // Gamelle J2 (impact J1)
+    // Buts et Gamelles (Bits 11 a 14 sont les FRONT MONTANTS)
+    if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); } 
+    if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); } 
+    if (bitRead(inputs, 12)) { if(score_p2 > 0) score_p2--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J1); } 
+    if (bitRead(inputs, 14)) { if(score_p1 > 0) score_p1--; ball--; playSFX(4); requestAnimation(ANIM_GAM_J2); } 
 
-    // Reset Manuel (Appui long OK > 1.8s)
-    extern volatile int ok_buttom_start;
+    // Reset Long OK
     if (ok_buttom_start > 20) { 
       bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
-      matrix->fillScreen(C_BLACK); 
-      requestAnimation(ANIM_NONE); // Stopper toute animation en cours
-      playSFX(1, true); // 001.mp3 est votre Intro
-      Serial.println("[GAME] Manual Reset triggered by long press.");
+      matrix->fillScreen(C_BLACK); requestAnimation(ANIM_NONE); playSFX(1, true); 
     }
     
     score_screen_starwars();
+
     if (ball <= 0) { 
       bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
       matrix->fillScreen(C_BLACK); 
       if (score_p1 > score_p2) { playSFX(5); requestAnimation(ANIM_VIC_J1); } 
-      else { playSFX(6); requestAnimation(ANIM_VIC_J2); } // Fanfare Victoire
+      else { playSFX(6); requestAnimation(ANIM_VIC_J2); }
     }
   }
 }

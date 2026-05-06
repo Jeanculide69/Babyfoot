@@ -83,4 +83,11 @@ struct Fighter {
   int targetX;
 };
 
+struct Blaster {
+  float x, y;
+  float vx;
+  uint16_t color;
+  bool active;
+};
+
 #endif
