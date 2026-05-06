@@ -156,6 +156,7 @@ void score_screen_starwars(bool reset = false) {
   static int last_s1 = -1, last_s2 = -1, last_b = -1;
   static bool needsFullRedraw = false;
   static bool wasAnimActive = false;
+  static unsigned long cooldown_timer = 0;
 
   if (reset) { 
     matrix->fillScreen(C_BLACK);
@@ -165,26 +166,30 @@ void score_screen_starwars(bool reset = false) {
 
   bool animActive = isAnimationActive();
 
-  // Nettoyage complet lors des transitions (Animation ON/OFF) pour éviter les pixels fantômes
-  if (animActive != wasAnimActive) {
-    matrix->fillScreen(C_BLACK);
-    wasAnimActive = animActive;
-    needsFullRedraw = true;
+  // Transition Animation -> Cooldown
+  if (!animActive && wasAnimActive) {
+    cooldown_timer = millis() + 1500; // Pause de 1.5s après l'animation
+    wasAnimActive = false;
   }
 
-  // 1. Affichage de l'animation
+  // 1. Affichage de l'animation (Plein écran, pas de HUD)
   if (animActive) {
     updateAnimations();
+    wasAnimActive = true;
+    needsFullRedraw = true; 
+    return; // ON S'ARRÊTE ICI : Pas de HUD pendant le GIF
   }
 
-  // 2. Dessin du HUD (Scores/Noms)
-  // On ne nettoie au noir QUE si aucune animation n'est active pour ne pas l'effacer
-  if (!animActive && (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b)) {
+  // 2. Gestion du Cooldown (On attend avant de montrer le score)
+  if (millis() < cooldown_timer) {
+    // On peut laisser le dernier pixel ou effacer. On va laisser pour l'instant.
+    return; 
+  }
+
+  // 3. Dessin du HUD (Scores/Noms)
+  if (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b) {
     matrix->fillRect(0, 0, 64, 25, C_BLACK);
-    needsFullRedraw = true;
-  }
-
-  if (needsFullRedraw || animActive) {
+    
     matrix->setTextWrap(false); matrix->setTextSize(1);
     matrix->setTextColor(C_BLUE); matrix->setCursor(1, 0); matrix->print("JEDI");
     matrix->setTextColor(C_RED); matrix->setCursor(39, 0); matrix->print("SITH");
@@ -204,7 +209,7 @@ void score_screen_starwars(bool reset = false) {
     if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
     matrix->print(ball);
 
-    if (!animActive) needsFullRedraw = false;
+    needsFullRedraw = false;
     last_s1 = score_p1; last_s2 = score_p2; last_b = ball;
   }
 
