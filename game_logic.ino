@@ -142,9 +142,9 @@ void handleGameLogic() {
   if (bitRead(inputs, 13)) handleAction("B2");
   if (bitRead(inputs, 12)) handleAction("G1");
   if (bitRead(inputs, 14)) handleAction("G2");
-  if (bitRead(inputs, 0)) handleAction("OK");
-  if (bitRead(inputs, 1)) handleAction("M1");
-  if (bitRead(inputs, 2)) handleAction("P1");
+  if (bitRead(inputs, 8))  handleAction("OK"); // <--- UTILISATION DU FRONT MONTANT (BIT 8)
+  if (bitRead(inputs, 1))  handleAction("M1");
+  if (bitRead(inputs, 2))  handleAction("P1");
 
   if (!isAnimationActive() && !bitRead(statut_game, RUN)) {
     extern void drawAnimStandby(); drawAnimStandby();
