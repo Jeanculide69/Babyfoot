@@ -23,8 +23,8 @@
 #define OE_PIN  23
 #define CLK_PIN 22
 
-#define RX_PIN 12
-#define TX_PIN 13
+#define RX_PIN 13
+#define TX_PIN 12
 #define LED_PIN_1 26
 #define LED_PIN_2 14
 #define LED_COUNT 40
@@ -39,8 +39,25 @@
 #define BTN_OK   27
 #define RESET_PIN 25
 
+#define DELAY_BUTTOM 5
+#define SENS_SET     300 
+
 #define RUN              0
 #define START_GAME       5
+#define SCORE_ADJUST     8
+#define SELECT_P1        9
+#define SELECT_P2        10
+#define PLAYER_CONFIRMED 11
+
+// --- TYPES ANIMATIONS ---
+#define ANIM_NONE    0
+#define ANIM_BUT_J1  1
+#define ANIM_BUT_J2  2
+#define ANIM_GAM_J1  3
+#define ANIM_GAM_J2  4
+#define ANIM_BIERE   5
+#define ANIM_VIC_J1  6
+#define ANIM_VIC_J2  7
 
 #define C_BLACK   0x0000
 #define C_WHITE   0xFFFF

@@ -32,16 +32,28 @@ Le design actuel repose sur un thème "Jedi vs Sith".
 ## 3. 🖐️ Entrées & Capteurs
 *   **Boutons Tactiles (`touchRead`)** :
     *   OK: **27** | MOINS (-): **32** | PLUS (+): **33**
-    *   Seuil de détection : **500**.
+    *   Seuil de détection stable : **300**.
 *   **Capteurs de Buts (Digital INPUT)** :
     *   But Droit: **36** | Gamelle Droite: **39**
     *   But Gauche: **34** | Gamelle Gauche: **35**
-    *   *Note* : Pins "Input-only", ne pas activer de Pull-up interne.
+    *   **Logique** : Active-LOW (Détection sur passage à 0).
+    *   *Note* : Pins "Input-only", Pull-up externes obligatoires (matériel).
 
 ## 4. ⚙️ Périphériques Additionnels
-*   **Audio (DFPlayer)** : RX: 12, TX: 13.
+*   **Audio (DFPlayer Mini)** : RX: 12, TX: 13.
+    *   **Méthode de lecture** : Commande `0x0F` (Spécifier Dossier/Fichier).
+    *   **Organisation SD** : Dossier racine nommé `01`.
+    *   **Contenu Dossier 01** :
+        *   `001.mp3` : Intro Star Wars (Boucle)
+        *   `002.mp3` : But Jedi (Short)
+        *   `003.mp3` : But Sith (Short)
+        *   `004.mp3` : Gamelle (Short)
+        *   `005.mp3` : Victoire Jedi (Fanfare)
+        *   `006.mp3` : Victoire Sith (Fanfare)
+        *   `007.mp3` : Ambiance Match (Boucle Podrace)
+        *   `008.mp3` : Signal Départ Match (Une fois avant le 007)
 *   **LED Strips (NeoPixel)** : Pin **26** (Strip 1) et Pin **14** (Strip 2).
 *   **Système** : Pin Reset hardware sur **25**.
 
 ---
-*Dernière mise à jour : 06/05/2026 - Version Stable DMA V10.0 (FREEZE)*
+*Dernière mise à jour : 06/05/2026 - Version Stable Audio V11.0 (Dossier 01)*
