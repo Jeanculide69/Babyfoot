@@ -1,4 +1,6 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <WiFi.h>
+#include <WebServer.h>
 #include "config.h"
 
 MatrixPanel_I2S_DMA *matrix = nullptr;
@@ -20,13 +22,61 @@ volatile int cur_vol = 0;
 volatile int target_vol = 25;
 unsigned long last_vol_ms = 0;
 
-void updateAudioFade() {
-  // Désactivé pour coller au code original (volume fixe)
+WebServer server(80);
+
+void handleRoot() {
+  String html = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>";
+  html += "body { background: #000; color: #FFE000; font-family: sans-serif; text-align: center; }";
+  html += ".btn { display: block; width: 80%; margin: 20px auto; padding: 20px; font-size: 24px; border: 2px solid #FFE000; border-radius: 10px; background: #222; color: #FFE000; text-decoration: none; }";
+  html += ".btn:active { background: #444; } .jedi { border-color: #00F; color: #00F; } .sith { border-color: #F00; color: #F00; }";
+  html += "</style></head><body>";
+  html += "<h1>BABYFOOT CONTROL</h1>";
+  html += "<a href='/action?id=B1' class='btn jedi'>BUT JEDI (P1)</a>";
+  html += "<a href='/action?id=B2' class='btn sith'>BUT SITH (P2)</a>";
+  html += "<a href='/action?id=G1' class='btn jedi'>GAMELLE JEDI</a>";
+  html += "<a href='/action?id=G2' class='btn sith'>GAMELLE SITH</a>";
+  html += "<a href='/action?id=OK' class='btn' style='border-color:#FFF;color:#FFF;'>BOUTON OK</a>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
 }
+
+extern void handleAction(String act);
+
+#include <ESPmDNS.h>
 
 void setup() {
   Serial.begin(115200);
   Serial.println("\n[SYSTEM] Babyfoot Star Wars Starting...");
+
+  // Connexion WiFi à la Livebox
+  WiFi.mode(WIFI_STA);
+  WiFi.begin("Livebox-6E60", "gQszNPUotXSt7jKKH3");
+  
+  Serial.print("[WIFI] Connecting to Livebox...");
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+    delay(500);
+    Serial.print(".");
+    timeout++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WIFI] Connected !");
+    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
+    if (MDNS.begin("babyfoot")) {
+      Serial.println("[WIFI] mDNS started: http://babyfoot.local");
+    }
+  } else {
+    Serial.println("\n[WIFI] Connection failed. Check credentials.");
+  }
+
+  server.on("/", handleRoot);
+  server.on("/action", []() {
+    if (server.hasArg("id")) handleAction(server.arg("id"));
+    server.sendHeader("Location", "/");
+    server.send(303);
+  });
+  server.begin();
 
   // IMPULSION RESET HARDWARE (Obligatoire pour débloquer les capteurs)
   pinMode(25, OUTPUT);
@@ -74,7 +124,7 @@ void setup() {
 }
 
 void loop() {
-  updateAudioFade();
+  server.handleClient();
   extern void handleGameLogic();
   handleGameLogic();
   delay(1);

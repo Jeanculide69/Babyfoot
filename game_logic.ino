@@ -231,9 +231,20 @@ bool check_touch(int pin, volatile int &counter) {
   return false;
 }
 
+// --- FLAGS DE SIMULATION GLOBAUX (Pour WiFi et Serial) ---
+static bool sim_ok = false, sim_b1 = false, sim_g1 = false, sim_b2 = false, sim_g2 = false;
+
+void handleAction(String act) {
+  if (act == "B1") sim_b1 = true;
+  if (act == "B2") sim_b2 = true;
+  if (act == "G1") sim_g1 = true;
+  if (act == "G2") sim_g2 = true;
+  if (act == "OK") sim_ok = true;
+  Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
+}
+
 void read_inputs_old() {
   // --- COMMANDES DE SIMULATION SERIE ---
-  static bool sim_ok = false, sim_b1 = false, sim_g1 = false, sim_b2 = false, sim_g2 = false;
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
@@ -343,4 +354,3 @@ void handleGameLogic() {
     }
   }
 }
-void handleAction(String act) { }
