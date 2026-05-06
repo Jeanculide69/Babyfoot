@@ -20,38 +20,44 @@ void setupLEDs() {
   strip2.show();
 }
 
+void color_neo(uint32_t c) {
+  for(int i = 0; i < LED_COUNT; i++) {
+    strip1.setPixelColor(i, c);
+    strip2.setPixelColor(i, c);
+  }
+}
+
+// Fonction "Miroir" de l'ancien code
+void edge_color(int x, int y, uint32_t color) {  
+  // Bord gauche (Strip 1)
+  if (x == 0 && y < 31) {               
+    strip1.setPixelColor(y, color);
+  }
+  // Bord bas gauche (Strip 1 suite)
+  if (y == 31 && x < 9) {
+    strip1.setPixelColor(y + x, color);                        
+  }  
+  // Bord droit (Strip 2)
+  if (x == 63 && y < 31) { 
+    strip2.setPixelColor(y, color);
+  }
+  // Bord bas droit (Strip 2 suite)
+  if (y == 31 && x > 52) {
+    strip2.setPixelColor(x - 22, color);                          
+  }
+}
+
 void updateLEDs() {
-  static unsigned long lastUpdate = 0;
-  if (millis() - lastUpdate < 30) return;
-  lastUpdate = millis();
-
-  static uint16_t j = 0;
-  j++;
-
   if (isAnimationActive()) {
-    // --- ANIMATION COULEUR (But / Victoire) ---
-    for (int i = 0; i < LED_COUNT; i++) {
-      uint32_t color = strip1.gamma32(strip1.ColorHSV((i * 65536 / LED_COUNT) + (j * 512)));
-      strip1.setPixelColor(i, color);
-      strip2.setPixelColor(i, color);
-    }
+    // En mode animation, les LEDs sont mises à jour pixel par pixel par edge_color()
+    // appelée depuis read_gif_file.ino. On fait juste le show() à la fin de la frame.
+    strip1.show();
+    strip2.show();
   } 
-  else if (bitRead(statut_game, 1)) { // Mode RUN (Match en cours)
-    // --- BLANC FIXE PENDANT LE MATCH ---
-    for (int i = 0; i < LED_COUNT; i++) {
-      strip1.setPixelColor(i, strip1.Color(255, 255, 255));
-      strip2.setPixelColor(i, strip2.Color(255, 255, 255));
-    }
-  }
   else {
-    // --- VEILLE / STANDBY (Petit pulse bleu) ---
-    uint8_t pulse = (sin(millis() / 500.0) * 50) + 60;
-    for (int i = 0; i < LED_COUNT; i++) {
-      strip1.setPixelColor(i, strip1.Color(0, 0, pulse));
-      strip2.setPixelColor(i, strip2.Color(0, 0, pulse));
-    }
+    // SINON BLANC PUR (Comme dans le old)
+    color_neo(0x00FFFFFF); 
+    strip1.show();
+    strip2.show();
   }
-
-  strip1.show();
-  strip2.show();
 }

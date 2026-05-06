@@ -43,17 +43,21 @@ void drawAnimStandby() {
   if (millis() - last_anim_millis < 80) return;
   last_anim_millis = millis();
 
+  extern void edge_color(int x, int y, uint32_t color);
   for (int y = 0; y < 32; y++) {
     for (int x = 0; x < 64; x++) {
       int pix = y * 64 + x;
       uint16_t color444 = veille_data[current_frame_standby][pix];
       
-      // Conversion 444 -> 565 pour DMA
-      uint16_t r = (color444 >> 8) & 0x0F;
-      uint16_t g = (color444 >> 4) & 0x0F;
-      uint16_t b = color444 & 0x0F;
+      uint8_t r = (color444 >> 8) & 0x0F;
+      uint8_t g = (color444 >> 4) & 0x0F;
+      uint8_t b = color444 & 0x0F;
       
-      matrix->drawPixel(x, y, matrix->color444(r, g, b));
+      uint32_t c565 = matrix->color444(r, g, b);
+      matrix->drawPixel(x, y, c565);
+
+      // Miroir Ambilight
+      edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
     }
   }
 
@@ -66,10 +70,17 @@ void drawAnimStandby() {
 void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
   if (millis() - last_anim_ms < 100) return;
   last_anim_ms = millis();
+  extern void edge_color(int x, int y, uint32_t color);
   for (int y = 0; y < 32; y++) {
     for (int x = 0; x < 64; x++) {
       uint16_t c = data[anim_frame][y * 64 + x];
-      matrix->drawPixel(x, y, matrix->color444((c >> 8) & 0x0F, (c >> 4) & 0x0F, c & 0x0F));
+      uint8_t r = (c >> 8) & 0x0F;
+      uint8_t g = (c >> 4) & 0x0F;
+      uint8_t b = c & 0x0F;
+      matrix->drawPixel(x, y, matrix->color444(r, g, b));
+      
+      // Ambilight "Old School" : Miroir du bord
+      edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
     }
   }
   anim_frame++;

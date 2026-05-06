@@ -251,9 +251,9 @@ void handleAction(String act) {
   if (act == "G2") sim_g2 = true;
   if (act == "OK") sim_ok = true;
   if (act == "P1") score_p1++;
-  if (act == "M1") { if(score_p1 > 0) score_p1--; }
+  if (act == "M1") score_p1--; 
   if (act == "P2") score_p2++;
-  if (act == "M2") { if(score_p2 > 0) score_p2--; }
+  if (act == "M2") score_p2--; 
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
@@ -354,7 +354,7 @@ void handleGameLogic() {
         }
         if (bitRead(inputs, 8)) bitSet(statut_game, PLAYER_CONFIRMED);
       } else {
-        if (bitRead(inputs, 9)) { if(score_p1 > 0 && bitRead(statut_game, SELECT_P1)) score_p1--; else if(score_p2 > 0) score_p2--; }
+        if (bitRead(inputs, 9)) { if(bitRead(statut_game, SELECT_P1)) score_p1--; else score_p2--; }
         if (bitRead(inputs, 10)) { if(bitRead(statut_game, SELECT_P1)) score_p1++; else score_p2++; }
         if (bitRead(inputs, 8)) { bitClear(statut_game, SCORE_ADJUST); bitClear(statut_game, PLAYER_CONFIRMED); }
       }
@@ -367,8 +367,8 @@ void handleGameLogic() {
     // Buts et Gamelles (Bits 11 a 14 sont les FRONT MONTANTS)
     if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
     if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
-    if (bitRead(inputs, 12)) { if(score_p2 > 0) score_p2--; playSFX(4); requestAnimation(ANIM_GAM_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
-    if (bitRead(inputs, 14)) { if(score_p1 > 0) score_p1--; playSFX(4); requestAnimation(ANIM_GAM_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+    if (bitRead(inputs, 12)) { score_p2--; playSFX(4); requestAnimation(ANIM_GAM_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+    if (bitRead(inputs, 14)) { score_p1--; playSFX(4); requestAnimation(ANIM_GAM_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
 
     // Reset Long OK
     if (ok_buttom_start > 20) { 
