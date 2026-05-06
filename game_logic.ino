@@ -1,4 +1,23 @@
 #include "config.h"
+
+// --- DESSIN DES CHIFFRES MODERN BOLD ---
+const uint8_t BOLD_BITMAPS[10][6] = {
+  {0x7C,0xC6,0xC6,0xC6,0xC6,0x7C}, {0x18,0x38,0x18,0x18,0x18,0x18},
+  {0x7C,0xC6,0x06,0x3C,0x60,0xFE}, {0x7C,0xC6,0x1C,0x06,0xC6,0x7C},
+  {0x1C,0x3C,0x6C,0xCC,0xFE,0x0C}, {0xFE,0xC0,0xFC,0x06,0xC6,0x7C},
+  {0x3C,0x60,0xFC,0xC6,0xC6,0x7C}, {0xFE,0xC6,0x0C,0x18,0x18,0x18},
+  {0x7C,0xC6,0x7C,0xC6,0xC6,0x7C}, {0x7C,0xC6,0x7E,0x06,0x06,0x3C}
+};
+
+void drawBoldNumber(int n, int x, int y, uint16_t color) {
+  if (n < 0 || n > 9 || !matrix) return;
+  for (int r = 0; r < 6; r++) {
+    uint8_t row = BOLD_BITMAPS[n][r];
+    for (int c = 0; c < 8; c++) {
+      if (row & (1 << (7 - c))) { matrix->fillRect(x + c*2, y + r*2, 2, 2, color); }
+    }
+  }
+}
 #include <Arduino.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 
@@ -190,20 +209,23 @@ void score_screen_starwars(bool reset = false) {
   if (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b) {
     matrix->fillRect(0, 0, 64, 25, C_BLACK);
     
+    // 1. DÉCOR COCKPIT ET NOMS
+    matrix->drawFastHLine(0, 0, 64, 0x18E3);
+    matrix->drawFastHLine(0, 9, 64, 0x18E3);
     matrix->setTextWrap(false); matrix->setTextSize(1);
-    matrix->setTextColor(C_BLUE); matrix->setCursor(1, 0); matrix->print("JEDI");
-    matrix->setTextColor(C_RED); matrix->setCursor(39, 0); matrix->print("SITH");
+    matrix->setTextColor(C_BLUE); matrix->setCursor(1, 1); matrix->print("JEDI");
+    matrix->setTextColor(C_RED); matrix->setCursor(39, 1); matrix->print("SITH");
 
     matrix->setTextSize(2); 
     bool flash = (millis() / 250) % 2; 
     bool p1_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P1) || flash;
     bool p2_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P2) || flash;
 
-    matrix->setTextColor(p1_v ? C_BLUE : C_BLACK);
-    matrix->setCursor(score_p1 > 9 ? 1 : 5, 10); matrix->print(score_p1); 
-    
-    matrix->setTextColor(p2_v ? C_RED : C_BLACK);
-    matrix->setCursor(score_p2 > 9 ? 42 : 51, 10); matrix->print(score_p2); 
+    // Score JEDI BOLD
+    if (p1_v) drawBoldNumber(score_p1 % 10, score_p1 > 9 ? 1 : 5, 10, C_BLUE);
+  
+    // Score SITH BOLD
+    if (p2_v) drawBoldNumber(score_p2 % 10, score_p2 > 9 ? 42 : 51, 10, C_RED);
     
     matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
     if (ball > 9) matrix->setCursor(27, 13); else matrix->setCursor(30, 13); 
