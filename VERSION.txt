@@ -1,4 +1,9 @@
-0.1 STAR WARS - Final Stable Version
+BABYFOOT FIRMWARE V10.0 STABLE
 Date: 2026-05-06
-Author: Antigravity & USER
-Status: GOLD
+Status: FREEZE
+Features:
+- ESP32 HUB75 I2S DMA Driver
+- Star Wars Starfield HUD
+- Organic Jedi vs Sith Animation (TargetX System)
+- Balanced Score HUD (Right-aligned P2)
+- Hardware Pins: NeoPixel(26,14), Reset(25), Audio(12,13)
