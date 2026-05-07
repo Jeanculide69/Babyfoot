@@ -243,6 +243,24 @@ extern void handleAction(String act);
 
 #include <ESPmDNS.h>
 
+// --- RÉINITIALISATION TOTALE ---
+void resetTournament() {
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
+  if (LittleFS.exists("/tournament.json")) {
+    LittleFS.remove("/tournament.json");
+    addLog("Tournoi: MEMOIRE EFFACEE");
+  }
+  xSemaphoreGive(fsMutex);
+  
+  portENTER_CRITICAL(&stateMutex);
+  score_p1 = 0; score_p2 = 0; ball = 11;
+  statut_game = 0; bitSet(statut_game, START_GAME);
+  tournament_mode = false;
+  team1_name = "JEDI";
+  team2_name = "SITH";
+  portEXIT_CRITICAL(&stateMutex);
+}
+
 void setup() {
   fsMutex = xSemaphoreCreateMutex();
   audioMutex = xSemaphoreCreateMutex();
@@ -328,6 +346,11 @@ void setup() {
     doc["finished"] = bitRead(statut_game, MATCH_FINISHED);
     String out; serializeJson(doc, out);
     server.send(200, "application/json", out);
+  });
+
+  server.on("/api/reset_tournament", []() {
+    resetTournament();
+    server.send(200, "text/plain", "OK");
   });
 
   server.on("/api/save_settings", []() {

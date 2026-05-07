@@ -435,7 +435,7 @@ const char TOURNAMENT_HTML[] PROGMEM = R"rawliteral(
         <div id="team_list" style="margin:15px; columns:2; text-align:left;"></div>
         <button class="btn" onclick="startTournament()" id="start_btn" disabled>GENERER LE TABLEAU</button>
     </div>
-    <div style="margin-top:20px;"><button class="btn" style="background:red;color:white; width: 220px;" onclick="reset()">REINITIALISER TOUT</button></div>
+    <div style="margin-top:20px;"><button class="btn" style="background:#d73a49; color:white; width: 220px;" onclick="reset()">RAZ MEMOIRE & RESET</button></div>
     <div class="bracket-container" id="bracket"></div>
     <script>
         let tournament = { teams: [], rounds: [], activeMatch: null };
@@ -543,9 +543,11 @@ const char TOURNAMENT_HTML[] PROGMEM = R"rawliteral(
             }
         }
         function reset() { 
-            if(confirm("Effacer tout le tournoi ?")) { 
-                tournament = { teams: [], rounds: [], activeMatch: null };
-                save().then(() => setTimeout(() => location.reload(), 500));
+            if(confirm("REINITIALISATION TOTALE (Tournoi + Scores) ?")) { 
+                fetch('/api/reset_tournament').then(() => {
+                    alert("Mémoire effacée. Redémarrage...");
+                    location.href = '/';
+                });
             } 
         }
         function save() { 

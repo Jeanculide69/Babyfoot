@@ -288,17 +288,29 @@ void drawStickman(Fighter &f) {
   // A. Dessin du bras (relie l'epaule a la main avec la couleur de l'equipe)
   matrix->drawLine(shoulderX, shoulderY, hx, hy, f.color);
 
-  // B. Calcul de la direction du sabre pour placer le manche et le laser
+  // --- DESSIN FINAL DU SABRE CORRIGÉ ---
+  
+  // A. Bras
+  matrix->drawLine(shoulderX, shoulderY, hx, hy, f.color);
+
+  // B. Laser (Dessiné ENTIER d'un seul coup pour éviter qu'il se plie)
+  matrix->drawLine(hx, hy, sx2, sy2, f.color);
+
+  // C. Calcul du manche (Gris)
   int dX = (sx2 > hx) ? 1 : ((sx2 < hx) ? -1 : 0);
   int dY = (sy2 > hy) ? 1 : ((sy2 < hy) ? -1 : 0);
 
-  // C. Dessin du laser (2 pixels de couleur d'equipe)
-  matrix->drawLine(hx + dX*2, hy + dY*2, sx2, sy2, f.color);
+  // Ajustement pour les lignes très aplaties
+  if (abs(sx2 - hx) > abs(sy2 - hy) * 2) {
+      dY = 0; 
+  } else if (abs(sy2 - hy) > abs(sx2 - hx) * 2) {
+      dX = 0; 
+  }
 
-  // D. Dessin du manche (Gris moyen)
+  // D. Manche (Gris) posé exactement sur la ligne du sabre
   matrix->drawPixel(hx + dX, hy + dY, C_GREY); 
 
-  // E. Dessin de la main (Couleur equipe)
+  // E. Main (Couleur équipe) redessinée par-dessus
   matrix->drawPixel(hx, hy, f.color);
 }
 
@@ -382,9 +394,15 @@ void score_screen_starwars(bool reset = false) {
     matrix->drawFastHLine(0, 9, 64, 0x18E3);  
     matrix->drawFastVLine(31, 0, 10, 0x18E3); 
 
-    // Affichage dynamique des scores
-    drawScoreCentered(score_p1, 0, 12, C_BLUE);
-    drawScoreCentered(score_p2, 32, 12, C_RED);
+    // Affichage dynamique des scores (avec clignotement en mode correction)
+    bool blink = (statut_game & (1 << SCORE_ADJUST)) && ((millis() / 250) % 2);
+    
+    if (!(blink && (statut_game & (1 << SELECT_P1)))) {
+        drawScoreCentered(score_p1, 0, 12, C_BLUE);
+    }
+    if (!(blink && (statut_game & (1 << SELECT_P2)))) {
+        drawScoreCentered(score_p2, 32, 12, C_RED);
+    }
     
     // Compteur de balles central miniaturise
     matrix->drawRect(25, 11, 14, 9, 0x4208); 
@@ -470,7 +488,7 @@ void setupGame() {
 bool check_touch(int pin, volatile int &counter) {
   int val = touchRead(pin);
   if (val < SENS_SET && val > 1) { 
-    if (counter < 20) counter++; 
+    if (counter < 100) counter++; 
   }
   else if (counter > 0) { counter--; }
   
@@ -715,13 +733,15 @@ void handleGameLogic() {
         }
     }
 
-    // Reset Long OK
-    if (ok_buttom_start > 20) { 
-      portENTER_CRITICAL(&stateMutex);
-      bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
-      ball = 11; score_p1 = 0; score_p2 = 0; waiting_goal = 0;
-      portEXIT_CRITICAL(&stateMutex);
-      matrix->fillScreen(C_BLACK); requestAnimation(ANIM_NONE); playSFX(SFX_INTRO, true); 
+    // Reset Long OK (5 secondes)
+    if (ok_buttom_start > 80) { 
+      extern void resetTournament();
+      resetTournament();
+      ok_buttom_start = 0; // Reset counter
+      matrix->fillScreen(C_BLACK); 
+      requestAnimation(ANIM_NONE); 
+      extern void playSFX(int id, bool loop);
+      playSFX(SFX_INTRO, true); 
     }
     
     score_screen_starwars();
