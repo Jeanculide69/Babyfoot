@@ -20,6 +20,13 @@ void setupLEDs() {
   strip2.show();
 }
 
+void setNeoBrightness(int b) {
+  strip1.setBrightness(b);
+  strip2.setBrightness(b);
+  strip1.show();
+  strip2.show();
+}
+
 void color_neo(uint32_t c) {
   for(int i = 0; i < LED_COUNT; i++) {
     strip1.setPixelColor(i, c);
@@ -29,37 +36,50 @@ void color_neo(uint32_t c) {
 
 // Fonction "Miroir" de l'ancien code
 void edge_color(int x, int y, uint32_t color) {  
-  // Bord gauche (Strip 1)
-  if (x == 0 && y < 31) {               
+  // Bord gauche vertical (0-31)
+  if (x == 0 && y < 32) {               
     strip1.setPixelColor(y, color);
   }
-  // Bord bas gauche (Strip 1 suite)
-  if (y == 31 && x < 9) {
-    strip1.setPixelColor(y + x, color);                        
-  }  
-  // Bord droit (Strip 2)
-  if (x == 63 && y < 31) { 
+  // Bord droit vertical (0-31)
+  if (x == 63 && y < 32) { 
     strip2.setPixelColor(y, color);
   }
-  // Bord bas droit (Strip 2 suite)
-  if (y == 31 && x > 52) {
-    strip2.setPixelColor(x - 22, color);                          
+  // Bord bas - on repartit les 64 pixels sur les 8 LED restantes de chaque strip (32-39)
+  if (y == 31) {
+    if (x < 32) {
+        // Moitie gauche du bas vers Strip 1 (LED 32 a 39)
+        int ledIdx = 32 + (x / 4); 
+        strip1.setPixelColor(ledIdx, color);
+    } else {
+        // Moitie droite du bas vers Strip 2 (LED 32 a 39)
+        int ledIdx = 32 + ((63 - x) / 4);
+        strip2.setPixelColor(ledIdx, color);
+    }
   }
 }
 
 void updateLEDs() {
-  static bool wasAnimActive = false;
   bool animActive = isAnimationActive();
 
   if (animActive) {
+    // En cours d'animation : on laisse edge_color piloter les pixels et on affiche
     strip1.show();
     strip2.show();
-    wasAnimActive = true;
   } 
-  else if (wasAnimActive || millis() < 5000) { // On force le blanc au démarrage ou après une anim
-    color_neo(0x00FFFFFF); 
-    strip1.show();
-    strip2.show();
-    wasAnimActive = false;
+  else {
+    // Si on est en veille (START_GAME), on laisse edge_color faire le miroir du GIF
+    if (bitRead(statut_game, START_GAME)) {
+        strip1.show();
+        strip2.show();
+    } else {
+        // En match (tableau des scores) : Eclairage blanc fixe
+        static unsigned long lastUpdate = 0;
+        if (millis() - lastUpdate > 500) {
+            color_neo(strip1.Color(255, 255, 255));
+            strip1.show();
+            strip2.show();
+            lastUpdate = millis();
+        }
+    }
   }
 }

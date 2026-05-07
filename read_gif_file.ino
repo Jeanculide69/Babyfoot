@@ -14,23 +14,23 @@ extern void playSFX(int id, bool loop);
 #include "animations/pause_biere.c"
 #include "animations/victoire_bleu.c"
 #include "animations/victoire_rouge.c"
+#include "animations/balle_match.c"
 
-#define ANIM_NONE 0
-#define ANIM_BUT_J1 1
-#define ANIM_BUT_J2 2
-#define ANIM_GAM_J1 3
-#define ANIM_GAM_J2 4
-#define ANIM_BIERE  5
-#define ANIM_VIC_J1 6
-#define ANIM_VIC_J2 7
+
+// Les constantes ANIM_ sont maintenant centralisées dans config.h
 
 int active_anim = ANIM_NONE;
 int anim_frame = 0;
 unsigned long last_anim_ms = 0;
+unsigned long start_anim_ms = 0;
 
 void requestAnimation(int type) {
   active_anim = type;
   anim_frame = 0;
+  start_anim_ms = millis();
+  
+  // Declenchement sonore automatique pour les animations speciales
+  if (type == ANIM_BALLE_MATCH) playSFX(SFX_MATCH_PT); 
 }
 
 bool isAnimationActive() { return active_anim != ANIM_NONE; }
@@ -38,7 +38,7 @@ bool isAnimationActive() { return active_anim != ANIM_NONE; }
 int current_frame_standby = 0;
 unsigned long last_anim_millis = 0;
 
-void drawAnimStandby() {
+void drawStarWarsGIF() {
   if (!matrix) return;
   if (millis() - last_anim_millis < 80) return;
   last_anim_millis = millis();
@@ -89,14 +89,19 @@ void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
   }
   anim_frame++;
   if (anim_frame >= max_frames) {
-    if (loop) anim_frame = 0;
-    else {
+    if (loop) {
+        anim_frame = 0;
+    } else if (active_anim == ANIM_BALLE_MATCH && (millis() - start_anim_ms < 7000)) {
+        anim_frame = max_frames - 1; // On reste sur la derniere image
+    } else if ((active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) && (millis() - start_anim_ms < 5000)) {
+        anim_frame = max_frames - 1; // On reste sur la derniere image (Victoire)
+    } else {
       if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) {
         requestAnimation(ANIM_BIERE);
       } else {
-        // Fin d'un but ou de la bière -> on relance l'ambiance sonore appropriée
-        if (active_anim == ANIM_BIERE) playSFX(1, true); // 001.mp3 = Intro
-        else playSFX(7, true); // 007.mp3 = Match
+        // Fin d'un but, de la bière ou de la balle de match -> on relance l'ambiance
+        if (active_anim == ANIM_BIERE) playSFX(SFX_INTRO, true); 
+        else playSFX(SFX_AMBIANCE, true); 
         active_anim = ANIM_NONE;
       }
     }
@@ -105,12 +110,13 @@ void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
 
 void updateAnimations() {
   switch(active_anim) {
-    case ANIM_BUT_J1: drawGenericAnim(but_rouge_data, BUT_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_BUT_J2: drawGenericAnim(but_bleu_data, BUT_BLEU_FRAME_COUNT, false); break;
-    case ANIM_GAM_J1: drawGenericAnim(gamelle_rouge_data, GAMELLE_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_GAM_J2: drawGenericAnim(gamelle_bleu_data, GAMELLE_BLEU_FRAME_COUNT, false); break;
+    case ANIM_BUT_J1: drawGenericAnim(but_bleu_data, BUT_BLEU_FRAME_COUNT, false); break;
+    case ANIM_BUT_J2: drawGenericAnim(but_rouge_data, BUT_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_GAM_J1: drawGenericAnim(gamelle_bleu_data, GAMELLE_BLEU_FRAME_COUNT, false); break;
+    case ANIM_GAM_J2: drawGenericAnim(gamelle_rouge_data, GAMELLE_ROUGE_FRAME_COUNT, false); break;
     case ANIM_BIERE:  drawGenericAnim(pause_biere_data, PAUSE_BIERE_FRAME_COUNT, true); break;
-    case ANIM_VIC_J1: drawGenericAnim(victoire_rouge_data, VICTOIRE_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_VIC_J2: drawGenericAnim(victoire_bleu_data, VICTOIRE_BLEU_FRAME_COUNT, false); break;
+    case ANIM_VIC_J1: drawGenericAnim(victoire_bleu_data, VICTOIRE_BLEU_FRAME_COUNT, false); break;
+    case ANIM_VIC_J2: drawGenericAnim(victoire_rouge_data, VICTOIRE_ROUGE_FRAME_COUNT, false); break;
+    case ANIM_BALLE_MATCH: drawGenericAnim(balle_match_data, BALLE_MATCH_FRAME_COUNT, false); break;
   }
 }

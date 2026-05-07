@@ -1,6 +1,7 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <HTTPUpdateServer.h>
@@ -12,6 +13,44 @@ String team1_name = "JEDI";
 String team2_name = "SITH";
 bool tournament_mode = false;
 
+// --- CONFIG WIFI (PAR DEFAUT) ---
+String wifi_ssid = "Livebox-6E60";
+String wifi_pass = "gQszNPUotXSt7jKKH3";
+const byte DNS_PORT = 53;
+DNSServer dnsServer;
+bool is_ap_mode = false;
+
+void loadWiFiConfig() {
+  if (LittleFS.exists("/wifi.json")) {
+    File f = LittleFS.open("/wifi.json", "r");
+    if (f) {
+      StaticJsonDocument<256> doc;
+      DeserializationError err = deserializeJson(doc, f);
+      if (!err) {
+        if (doc.containsKey("ssid")) wifi_ssid = doc["ssid"].as<String>();
+        if (doc.containsKey("pass")) wifi_pass = doc["pass"].as<String>();
+      }
+      f.close();
+    }
+  }
+}
+
+void saveWiFiConfig(String s, String p) {
+  File f = LittleFS.open("/wifi.json", "w");
+  if (f) {
+    StaticJsonDocument<256> doc;
+    doc["ssid"] = s;
+    doc["pass"] = p;
+    serializeJson(doc, f);
+    f.close();
+  }
+}
+
+// --- PROTECTION MULTI-CŒUR ---
+portMUX_TYPE stateMutex = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE audioMutex = portMUX_INITIALIZER_UNLOCKED;
+SemaphoreHandle_t fsMutex;
+
 // --- LOGS SYSTÈME ---
 String system_logs[20];
 int log_idx = 0;
@@ -19,6 +58,151 @@ void addLog(String m) {
   system_logs[log_idx % 20] = m;
   log_idx++;
   Serial.println("[LOG] " + m);
+}
+
+// --- MOTEUR DE TOURNOI C++ (Backend-Driven) ---
+void updateTournamentProgress(int s1, int s2) {
+  if (!tournament_mode) return;
+  addLog("Tournoi: Debut mise a jour avec scores " + String(s1) + "-" + String(s2));
+
+  // 1. Prendre le Mutex pour TOUTE l'operation (Lecture + Ecriture)
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    addLog("Tournoi: FS occupe (Mutex Timeout)");
+    return;
+  }
+
+  // 2. Lecture en RAM
+  if (!LittleFS.exists("/tournament.json")) {
+    xSemaphoreGive(fsMutex);
+    addLog("Tournoi: Fichier tournament.json inexistant");
+    return;
+  }
+
+  File f = LittleFS.open("/tournament.json", "r");
+  if (!f) {
+    xSemaphoreGive(fsMutex);
+    addLog("Tournoi: Erreur ouverture lecture");
+    return;
+  }
+
+  if (f.size() == 0) {
+    f.close();
+    xSemaphoreGive(fsMutex);
+    addLog("Tournoi: Fichier vide (EmptyInput)");
+    return;
+  }
+
+  DynamicJsonDocument doc(16384); 
+  DeserializationError error = deserializeJson(doc, f);
+  f.close();
+
+  if (error) {
+    xSemaphoreGive(fsMutex);
+    addLog("Tournoi: Erreur JSON: " + String(error.c_str()));
+    return;
+  }
+
+  // 3. Mise a jour des donnees en RAM
+  if (doc.containsKey("activeMatch") && !doc["activeMatch"].isNull()) {
+    int r = doc["activeMatch"]["r"];
+    int m = doc["activeMatch"]["m"];
+    addLog("Tournoi: Match actif trouve: [" + String(r) + "][" + String(m) + "]");
+    
+    // On verifie que la structure est coherente
+    if (r < (int)doc["rounds"].size() && m < (int)doc["rounds"][r].size()) {
+      JsonObject match = doc["rounds"][r][m];
+      match["s1"] = s1;
+      match["s2"] = s2;
+      int winner = (s1 > s2) ? 1 : 2;
+      match["winner"] = winner;
+      
+      String winnerName = (winner == 1) ? match["t1"].as<String>() : match["t2"].as<String>();
+      addLog("Tournoi: Vainqueur: " + winnerName);
+
+      // Avancement automatique vers le round suivant
+      if (r + 1 < (int)doc["rounds"].size()) {
+        int nextM = m / 2;
+        addLog("Tournoi: Avancement vers [" + String(r+1) + "][" + String(nextM) + "]");
+        if (m % 2 == 0) {
+            doc["rounds"][r + 1][nextM]["t1"] = winnerName;
+            addLog("Tournoi: " + winnerName + " place en T1 du match suivant");
+        } else {
+            doc["rounds"][r + 1][nextM]["t2"] = winnerName;
+            addLog("Tournoi: " + winnerName + " place en T2 du match suivant");
+        }
+      } else {
+        addLog("Tournoi: FINALE TERMINEE !");
+      }
+
+      // Desactiver le match actif
+      doc.remove("activeMatch"); 
+      addLog("Tournoi: Match actif supprime du JSON");
+
+      // 4. Ecriture securisee (on n'ouvre en "w" que maintenant)
+      addLog("Tournoi: Ouverture fichier pour ecriture...");
+      f = LittleFS.open("/tournament.json", "w");
+      if (f) {
+        if (serializeJson(doc, f) == 0) {
+          addLog("Tournoi: ERREUR CRITIQUE SERIALISATION !");
+        } else {
+          addLog("Tournoi: Sauvegarde OK (" + String(f.size()) + " octets)");
+        }
+        f.close();
+      } else {
+        addLog("Tournoi: Erreur ouverture mode 'w'");
+      }
+    } else {
+      addLog("Tournoi: Indices r/m hors limites !");
+    }
+  } else {
+    addLog("Tournoi: Aucun activeMatch dans le JSON");
+  }
+
+  xSemaphoreGive(fsMutex);
+  addLog("Tournoi: Fin de procedure");
+}
+
+// --- CHARGEMENT AUTOMATIQUE DU PROCHAIN MATCH ---
+bool autoLoadNextMatch() {
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    addLog("Auto-Load: FS occupe");
+    return false;
+  }
+  
+  File f = LittleFS.open("/tournament.json", "r");
+  if (!f) { xSemaphoreGive(fsMutex); return false; }
+  
+  DynamicJsonDocument doc(16384);
+  DeserializationError error = deserializeJson(doc, f);
+  f.close();
+
+  bool found = false;
+  if (!error) {
+    for (int r = 0; r < (int)doc["rounds"].size() && !found; r++) {
+      for (int m = 0; m < (int)doc["rounds"][r].size() && !found; m++) {
+        JsonObject match = doc["rounds"][r][m];
+        if (match["winner"].isNull() && !match["t1"].isNull() && !match["t2"].isNull() && match["t1"] != "BYE" && match["t2"] != "BYE") {
+          team1_name = match["t1"].as<String>();
+          team2_name = match["t2"].as<String>();
+          
+          doc["activeMatch"]["r"] = r;
+          doc["activeMatch"]["m"] = m;
+          found = true;
+          addLog("Auto-Load: " + team1_name + " vs " + team2_name);
+        }
+      }
+    }
+    
+    if (found) {
+      f = LittleFS.open("/tournament.json", "w");
+      if (f) { serializeJson(doc, f); f.close(); }
+    } else {
+      tournament_mode = false;
+      addLog("Tournoi: CHAMPIONNAT TERMINE !");
+    }
+  }
+  xSemaphoreGive(fsMutex);
+  return found;
 }
 
 // Variables globales définies ici
@@ -34,14 +218,15 @@ void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2) {
     0x7E, 0xFF, 0x06, cmd, 0x00, p1, p2, 
     (uint8_t)(checksum >> 8), (uint8_t)(checksum & 0xFF), 0xEF
   };
+  
+  portENTER_CRITICAL(&audioMutex);
   Serial1.write(buf, 10);
+  portEXIT_CRITICAL(&audioMutex);
+  
   Serial.printf("[AUDIO] Send CMD: 0x%02X | P1: 0x%02X | P2: 0x%02X\n", cmd, p1, p2);
 }
 
-// --- GESTION VOLUME SMOOTH ---
-volatile int cur_vol = 0;
 volatile int target_vol = 25;
-unsigned long last_vol_ms = 0;
 
 WebServer server(80);
 HTTPUpdateServer httpUpdater;
@@ -56,30 +241,43 @@ extern void handleAction(String act);
 #include <ESPmDNS.h>
 
 void setup() {
+  fsMutex = xSemaphoreCreateMutex();
   Serial.begin(115200);
   addLog("Systeme Pret ! babyfoot.local");
   Serial.println("[SYSTEM] Ready.");
   
-  // Connexion WiFi à la Livebox
-  WiFi.mode(WIFI_STA);
-  WiFi.begin("Livebox-6E60", "gQszNPUotXSt7jKKH3");
+  // --- CHARGEMENT CONFIG WIFI ---
+  loadWiFiConfig();
   
-  Serial.print("[WIFI] Connecting to Livebox...");
-  int timeout = 0;
-  while (WiFi.status() != WL_CONNECTED && timeout < 20) {
-    delay(500);
-    Serial.print(".");
-    timeout++;
+  if (wifi_ssid != "") {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+    Serial.print("[WIFI] Connexion a " + wifi_ssid + "...");
+    
+    int timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+      delay(500); Serial.print(".");
+      timeout++;
+    }
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[WIFI] Connected !");
-    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
+    Serial.println("\n[WIFI] Connecte !");
+    Serial.print("[WIFI] IP Locale: "); Serial.println(WiFi.localIP());
     if (MDNS.begin("babyfoot")) {
-      Serial.println("[WIFI] mDNS started: http://babyfoot.local");
+      Serial.println("[WIFI] mDNS: http://babyfoot.local");
+      MDNS.addService("http", "tcp", 80);
     }
   } else {
-    Serial.println("\n[WIFI] Connection failed. Check credentials.");
+    Serial.println("\n[WIFI] Connexion échouée. Basculement en mode Point d'Accès (AP)...");
+    is_ap_mode = true;
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    WiFi.softAP("Babyfoot-Force-StarWars");
+    dnsServer.start(DNS_PORT, "*", IPAddress(192, 168, 4, 1));
+    Serial.print("[WIFI] Reseau Ouvert: Babyfoot-Force-StarWars | IP: "); 
+    Serial.println(WiFi.softAPIP());
+    addLog("Mode AP Active: Babyfoot-Force");
   }
 
   // --- ROUTES EMBARQUÉES (INSTANTANÉES) ---
@@ -100,15 +298,17 @@ void setup() {
   });
 
   server.on("/api/logs", HTTP_GET, []() {
-    String out = "{\"logs\":[";
+    StaticJsonDocument<2048> doc;
+    JsonArray logs = doc.createNestedArray("logs");
     for(int i=0; i<20; i++) {
       int idx = (log_idx - 1 - i + 20) % 20;
       if(system_logs[idx] != "") {
-        if(i > 0) out += ",";
-        out += "{\"t\":\"" + String(millis()/1000) + "\",\"m\":\"" + system_logs[idx] + "\"}";
+        JsonObject entry = logs.createNestedObject();
+        entry["t"] = millis()/1000;
+        entry["m"] = system_logs[idx];
       }
     }
-    out += "]}";
+    String out; serializeJson(doc, out);
     server.send(200, "application/json", out);
   });
 
@@ -121,19 +321,124 @@ void setup() {
     doc["t2"] = team2_name;
     doc["mode"] = tournament_mode ? "tournament" : "classic";
     doc["run"] = bitRead(statut_game, RUN);
+    doc["finished"] = bitRead(statut_game, MATCH_FINISHED);
     String out; serializeJson(doc, out);
     server.send(200, "application/json", out);
   });
 
-  server.on("/api/save_settings", HTTP_POST, []() {
+  server.on("/api/save_settings", []() {
     if (server.hasArg("t1")) team1_name = server.arg("t1");
     if (server.hasArg("t2")) team2_name = server.arg("t2");
     if (server.hasArg("vol")) target_vol = server.arg("vol").toInt();
-    if (server.hasArg("mode")) tournament_mode = (server.arg("mode") == "1");
-    
-    server.send(200, "text/plain", "Settings Saved");
-    Serial.println("[WEB] Settings Updated");
+    if (server.hasArg("mode")) {
+      tournament_mode = (server.arg("mode") == "1");
+      if (tournament_mode && server.hasArg("t1")) {
+         portENTER_CRITICAL(&stateMutex);
+         score_p1 = 0; score_p2 = 0; ball = 11;
+         statut_game = 0; 
+         bitSet(statut_game, START_GAME); // Bit 5 : Attente du bouton OK
+         bitClear(statut_game, RUN);      // Bit 0 : Pas encore en cours
+         portEXIT_CRITICAL(&stateMutex);
+         
+         extern void playSFX(int id, bool loop);
+         playSFX(SFX_INTRO, true); 
+         addLog("Match Prepare : " + team1_name + " vs " + team2_name);
+      }
+    }
+    server.send(200, "text/plain", "OK");
   });
+
+  // --- API TOURNOI (PERSISTANCE) ---
+  server.on("/api/get_tournament", HTTP_GET, []() {
+    if (LittleFS.exists("/tournament.json")) {
+      if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        File f = LittleFS.open("/tournament.json", "r");
+        server.streamFile(f, "application/json");
+        f.close();
+        xSemaphoreGive(fsMutex);
+      } else {
+        server.send(503, "text/plain", "FS Busy");
+      }
+    } else {
+      server.send(200, "application/json", "{\"teams\":[],\"rounds\":[]}");
+    }
+  });
+
+  server.on("/api/set_tournament", HTTP_POST, []() {
+    if (!server.hasArg("plain")) {
+      server.send(400, "text/plain", "Body Missing");
+      return;
+    }
+    
+    String body = server.arg("plain");
+    size_t len = body.length();
+
+    if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) != pdTRUE) { 
+        server.send(503, "text/plain", "FS Busy"); 
+        return; 
+    }
+    
+    // 1. Ecriture atomique via tampon interne
+    File f = LittleFS.open("/tournament.json.tmp", "w");
+    if (!f) { 
+        xSemaphoreGive(fsMutex);
+        server.send(500, "text/plain", "FS Error"); 
+        return; 
+    }
+
+    size_t written = f.print(body);
+    f.close();
+
+    // 2. Verification et renommage
+    if (written == len && len > 0) {
+      LittleFS.remove("/tournament.json");
+      if (LittleFS.rename("/tournament.json.tmp", "/tournament.json")) {
+        addLog("Tournoi: Configuration enregistree (" + String(written) + " octets)");
+        server.send(200, "text/plain", "Saved");
+      } else {
+        addLog("Tournoi: Erreur renommage !");
+        server.send(500, "text/plain", "Rename Error");
+      }
+    } else {
+      LittleFS.remove("/tournament.json.tmp");
+      addLog("Tournoi: Echec ecriture (" + String(written) + "/" + String(len) + ")");
+      server.send(500, "text/plain", "Write Incomplete");
+    }
+
+    xSemaphoreGive(fsMutex);
+  });
+
+  server.on("/api/test_sfx", HTTP_GET, []() {
+    if (server.hasArg("id")) {
+      extern void playSFX(int id, bool loop);
+      playSFX(server.arg("id").toInt(), false);
+      server.send(200, "text/plain", "SFX OK");
+    } else server.send(400);
+  });
+
+  server.on("/api/confirm_match", HTTP_GET, []() {
+    extern void requestAnimation(int type);
+    portENTER_CRITICAL(&stateMutex);
+    bitClear(statut_game, MATCH_FINISHED);
+    bitSet(statut_game, START_GAME);
+    ball = 11; score_p1 = 0; score_p2 = 0;
+    portEXIT_CRITICAL(&stateMutex);
+    
+    requestAnimation(ANIM_NONE);
+    extern void playSFX(int id, bool loop);
+    playSFX(SFX_INTRO, true); // Relance l'intro
+    addLog("Match Confirme. Pret pour le suivant.");
+    server.send(200, "text/plain", "OK");
+  });
+
+  server.on("/api/test_anim", HTTP_GET, []() {
+    if (server.hasArg("id")) {
+      extern void requestAnimation(int id);
+      requestAnimation(server.arg("id").toInt());
+      server.send(200, "text/plain", "ANIM OK");
+    } else server.send(400);
+  });
+
 
   server.on("/settings", HTTP_GET, []() {
     String h = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><title>Settings</title>";
@@ -148,35 +453,68 @@ void setup() {
     server.send(200, "text/html", h);
   });
 
-  server.on("/api/get_tournament", HTTP_GET, []() {
-    File file = LittleFS.open("/tournament.json", "r");
-    if (file) {
-      server.streamFile(file, "application/json");
-      file.close();
-    } else {
-      server.send(200, "application/json", "{\"teams\":[],\"matches\":[]}");
-    }
-  });
-
-  server.on("/api/set_tournament", HTTP_POST, []() {
-    if (server.hasArg("plain")) {
-      File file = LittleFS.open("/tournament.json", "w");
-      if (file) {
-        file.print(server.arg("plain"));
-        file.close();
-        server.send(200, "text/plain", "OK");
-      } else {
-        server.send(500, "text/plain", "Save Failed");
-      }
-    }
+  server.on("/update", HTTP_GET, []() {
+    server.send_P(200, "text/html", UPDATE_HTML);
   });
   server.on("/action", HTTP_GET, []() {
     String id = server.arg("id");
-    handleAction(id);
+    if (id == "BR" && server.hasArg("val")) {
+      int v = server.arg("val").toInt();
+      if (matrix) matrix->setPanelBrightness(v);
+    } else if (id == "VL" && server.hasArg("val")) {
+      target_vol = server.arg("val").toInt();
+      sendDFCommand(0x06, 0x00, (uint8_t)target_vol);
+    } else if (id == "AB" && server.hasArg("val")) {
+      extern void setNeoBrightness(int b);
+      setNeoBrightness(server.arg("val").toInt());
+    } else if (id == "NEXT_MATCH") {
+      handleAction("OK"); // Relance le cycle de jeu
+    } else {
+      handleAction(id);
+    }
     addLog("Action recue: " + id);
     server.send(200, "text/plain", "OK");
   });
-  httpUpdater.setup(&server);
+
+  server.on("/wifi", HTTP_GET, []() {
+    server.send_P(200, "text/html", WIFI_HTML);
+  });
+
+  server.on("/api/wifi_scan", HTTP_GET, []() {
+    int n = WiFi.scanNetworks();
+    StaticJsonDocument<2048> doc;
+    JsonArray root = doc.to<JsonArray>();
+    for (int i = 0; i < n; ++i) {
+      JsonObject item = root.createNestedObject();
+      item["ssid"] = WiFi.SSID(i);
+      item["rssi"] = WiFi.RSSI(i);
+    }
+    String out; serializeJson(doc, out);
+    server.send(200, "application/json", out);
+  });
+
+  server.on("/api/save_wifi", HTTP_GET, []() {
+    String s = server.arg("ssid");
+    String p = server.arg("pass");
+    if (s != "") {
+      saveWiFiConfig(s, p);
+      server.send(200, "text/plain", "OK");
+      delay(2000);
+      ESP.restart();
+    } else server.send(400);
+  });
+  server.onNotFound([]() {
+    if (is_ap_mode) {
+      server.sendHeader("Location", String("http://192.168.4.1/wifi"), true);
+      server.send(302, "text/plain", "");
+    } else {
+      server.send(404, "text/plain", "Not Found");
+    }
+  });
+
+  httpUpdater.setup(&server, "/do_update");
+  const char* headerkeys[] = {"Content-Length"};
+  server.collectHeaders(headerkeys, 1);
   server.begin();
 
   // IMPULSION RESET HARDWARE (Obligatoire pour débloquer les capteurs)
@@ -187,17 +525,16 @@ void setup() {
 
   Serial1.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
   delay(500);
-  Serial.println("\n\n[SYS] --- BABYFOOT CORE BOOT (V10.0 DMA) ---");
+  Serial.println("\n\n[SYS] --- BABYFOOT MASTER CONSOLE V1.0 (TOURNAMENT) ---");
   
-  // Initialisation volume a zero pour fade-in
-  cur_vol = 0;
+  // Initialisation volume
   target_vol = 25;
   sendDFCommand(0x09, 0x00, 0x02); // Force source SD
   delay(500);
   sendDFCommand(0x06, 0x00, 30); // Volume MAX (30)
   delay(500);
   extern void playSFX(int id, bool loop);
-  playSFX(1, true); // 001.mp3 dans dossier 01 est votre Intro
+  playSFX(SFX_INTRO, true); // 001.mp3 dans dossier 01 est votre Intro
 
   HUB75_I2S_CFG::i2s_pins _pins = {
     R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, 
@@ -233,14 +570,15 @@ void setup() {
   setupLEDs();
 
   // Lancer le serveur web sur le Core 0
-  xTaskCreatePinnedToCore(webTask, "WebTask", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(webTask, "WebTask", 8192, NULL, 1, NULL, 0);
 }
 
 // Tâche dédiée au serveur Web sur le Core 0
 void webTask(void *pvParameters) {
   while (true) {
+    if (is_ap_mode) dnsServer.processNextRequest();
     server.handleClient();
-    delay(10); // Laisse le processeur respirer
+    vTaskDelay(pdMS_TO_TICKS(10)); // Utilise le delai FreeRTOS natif pour liberer le CPU
   }
 }
 

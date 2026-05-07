@@ -29,41 +29,69 @@ void drawBoldNumber(int n, int x, int y, uint16_t color) {
   if (n > 9) {
     int d1 = n / 10;
     int d2 = n % 10;
-    // On dessine les deux chiffres cote a cote
+    // On dessine les deux chiffres tres serres (10px d'ecart)
     drawBoldDigit(d1, x, y, color);
-    drawBoldDigit(d2, x + 13, y, color); // 13px d'ecart (11px largeur + 2px espace)
+    drawBoldDigit(d2, x + 10, y, color); 
   } else {
     drawBoldDigit(n, x, y, color);
   }
 }
 
+// Calcule la largeur réelle en pixels d'un nombre dessiné avec drawBoldDigit
+int getScoreWidth(int n) {
+  if (n < 0) return 15;      // Signe "-" + Chiffre
+  else if (n > 9) return 18;  // Deux chiffres serres
+  return 8;                  // Un chiffre seul
+}
+
 void drawScoreCentered(int n, int zoneX, int y, uint16_t color) {
-  int width = 11; // Largeur par defaut d'un chiffre
-  if (n > 9) width = 24; // Deux chiffres + espace
-  else if (n < 0) width = 16; // Moins + chiffre
-  
-  int startX = zoneX + (32 - width) / 2;
+  int scoreWidth = getScoreWidth(n);
+  int startX;
+
+  if (zoneX == 0) {
+    // Espace visuel libre à gauche : X=0 à X=24 (largeur 25px)
+    startX = (25 - scoreWidth) / 2;
+  } else {
+    // Espace visuel libre à droite : X=39 à X=63 (largeur 25px)
+    startX = 39 + (25 - scoreWidth) / 2;
+  }
+
   drawBoldNumber(n, startX, y, color);
 }
 
 // --- DESSIN DES LETTRES BOLD (A-Z Simplifié) ---
-void drawTeamName(String name, int zoneX, uint16_t color) {
-  int len = name.length();
-  int totalWidth = len * 6; // Taille 1 = 6px par caractere
-  int startX = zoneX + (32 - totalWidth) / 2;
-  
-  matrix->setTextSize(1);
+void drawCenteredText(const String& text, int y, uint16_t color, int x_offset, int width) {
+  if (text.length() == 0) return;
+
+  int charWidth = 6; 
+  int textWidth = text.length() * charWidth;
+
+  // On efface uniquement la zone de texte pour eviter les trainees 
+  matrix->fillRect(x_offset, y, width, 8, C_BLACK);
   matrix->setTextWrap(false);
-  
-  if (len <= 4) {
-    // EFFET BOLD : On dessine deux fois avec 1px de décalage
+
+  if (textWidth <= width) {
+    int startX = x_offset + (width - textWidth) / 2;
+    matrix->setCursor(startX, y);
     matrix->setTextColor(color);
-    matrix->setCursor(startX, 1); matrix->print(name);
-    matrix->setCursor(startX + 1, 1); matrix->print(name);
+    matrix->print(text);
+    matrix->setCursor(startX + 1, y); matrix->print(text); // Bold
   } else {
-    // STYLE STANDARD
+    int scrollRange = textWidth - width + 10;
+    int offset = (millis() / 200) % scrollRange; 
+
     matrix->setTextColor(color);
-    matrix->setCursor(startX, 1); matrix->print(name);
+    for (int i = 0; i < text.length(); i++) {
+      int charX = x_offset + (i * charWidth) - offset;
+      
+      // CLIPPING STRICT : On ne dessine le caractere que s'il est dans sa zone
+      if (charX >= x_offset && (charX + charWidth - 1) <= (x_offset + width)) {
+        matrix->setCursor(charX, y);
+        matrix->print(text[i]);
+        matrix->setCursor(charX + 1, y);
+        matrix->print(text[i]);
+      }
+    }
   }
 }
 #include <Arduino.h>
@@ -73,6 +101,7 @@ extern MatrixPanel_I2S_DMA *matrix;
 
 // Variables globales déportées dans le fichier principal
 extern String team1_name, team2_name;
+extern bool tournament_mode;
 extern volatile int score_p1, score_p2, ball;
 extern volatile uint32_t statut_game;
 extern volatile unsigned int inputs;
@@ -81,6 +110,7 @@ int sens_set = SENS_SET;
 volatile int less_buttom_start = 0;
 volatile int more_buttom_start = 0;
 volatile int ok_buttom_start = 0;
+volatile int waiting_goal = 0;
 
 Particle particles[5];
 Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};
@@ -99,7 +129,7 @@ void playSFX(int id, bool loop = false) {
   sendDFCommand(0x0F, 0x01, (uint8_t)id); // Dossier 01, Fichier 'id'
   if (loop) {
     delay(200); 
-    sendDFCommand(0x19, 0x00, 0x00); // Activer la boucle sur le morceau en cours
+    sendDFCommand(0x19, 0x00, 0x00); // Activer la boucle
   }
 }
 
@@ -150,36 +180,123 @@ void updateFighter(Fighter &f, Fighter &other) {
 
 void drawStickman(Fighter &f) {
   int x = f.x;
-  int y = f.y - 1; 
-  int ly = y; 
-  
-  if (f.state == 3) { // Crouch
-    matrix->drawFastVLine(x, y - 1, 2, f.color);
-    matrix->drawPixel(x, y - 2, C_WHITE);
-  } else if (f.state == 2) { // Jump
-    y -= 1; // Saut reduit pour ne pas depasser
-    matrix->drawFastVLine(x, y - 2, 3, f.color);
-    matrix->drawPixel(x, y - 3, C_WHITE);
-    ly = y;
-  } else { // Normal
-    matrix->drawFastVLine(x, y - 2, 3, f.color);
-    matrix->drawPixel(x, y - 3, C_WHITE);
+  int baseY = 31; // On force l'utilisation de la toute derniere ligne
+
+  int headY, bodyTop, bodyHeight;
+  bool drawLegs = true;
+  int leg_offset = (f.frame / 3) % 2; // Vitesse d'animation des jambes adoucie
+
+  if (f.state == 3) { // Etat 3 : Accroupi
+    headY = baseY - 3;      
+    bodyTop = baseY - 2;    
+    bodyHeight = 2;         
+    drawLegs = false;       
+  } 
+  else if (f.state == 2) { // Etat 2 : Saut (Tuck jump)
+    headY = baseY - 5;      
+    bodyTop = baseY - 4;    
+    bodyHeight = 3;         
+    drawLegs = false;       
+  } 
+  else { // Etat 0 et 1 : Normal ou Attaque
+    headY = baseY - 5;      
+    bodyTop = baseY - 4;    
+    bodyHeight = 3;         
+    drawLegs = true;        
   }
 
-  int leg_offset = (f.frame / 2) % 2;
-  matrix->drawPixel(x - leg_offset, ly, f.color);
-  matrix->drawPixel(x + leg_offset, ly, f.color);
+  // 1. Dessin de la Tête (Blanc)
+  matrix->drawPixel(x, headY, C_WHITE);
 
-  // Sabres (longueur reduite pour ne pas depasser la zone de nettoyage)
-  int sx2, sy2;
+  // 2. Dessin du Tronc (Couleur de l'équipe)
+  matrix->drawFastVLine(x, bodyTop, bodyHeight, f.color);
+
+  // 3. Dessin des Jambes
+  if (drawLegs) {
+    if (leg_offset == 1) {
+      // Animation : Jambes ecartees (course)
+      matrix->drawFastVLine(x - 1, baseY - 1, 2, f.color); 
+      matrix->drawFastVLine(x + 1, baseY - 1, 2, f.color); 
+    } else {
+      // Animation : Jambes droites
+      matrix->drawFastVLine(x, baseY - 1, 2, f.color);
+    }
+  } else if (f.state == 2) {
+    // Animation en l'air : Petits pieds recroquevilles
+    matrix->drawPixel(x - 1, baseY - 2, f.color);
+    matrix->drawPixel(x + 1, baseY - 2, f.color);
+  } else if (f.state == 3) {
+    // Animation accroupi : Pieds au sol ecartez
+    matrix->drawPixel(x - 1, baseY, f.color);
+    matrix->drawPixel(x + 1, baseY, f.color);
+  }
+
+  // 4. Bras, Main et Sabre Laser
+  int shoulderX = x;
+  int shoulderY = bodyTop + 1;  // L'epaule est au milieu du corps
+
+  int hx = shoulderX + f.dir;   // Position de la main (X)
+  int hy = shoulderY;           // Position de la main (Y)
+  int sx2, sy2;                 // Pointe du sabre
+
+  uint16_t C_GREY = 0x8410;     // Code couleur RGB565 pour un Gris Moyen
+
   if (f.state == 1) { 
-    sx2 = x + (f.dir * 4); 
-    sy2 = y - 1 + (sin(f.frame * 0.5) * 2); 
-  } else { 
-    sx2 = x + (f.dir * 3); 
-    sy2 = y - 2 + (cos(f.frame * 0.2) * 1); 
+    // ETAT 1 : ATTAQUE (La main se deplace par rapport a l'epaule !)
+    int attackPhase = f.frame % 12;
+    if (attackPhase < 4) {
+      // Phase 1 : Armement -> Main tiree en arriere, sabre vers l'arriere
+      hx = shoulderX - f.dir; 
+      hy = shoulderY;
+      sx2 = hx - (f.dir * 2); sy2 = hy - 3;
+    } else if (attackPhase < 8) {
+      // Phase 2 : Frappe -> Bras tendu loin en avant !
+      hx = shoulderX + (f.dir * 2); 
+      hy = shoulderY;
+      sx2 = hx + (f.dir * 3); sy2 = hy;
+    } else {
+      // Phase 3 : Fin de course -> Main en bas
+      hx = shoulderX + f.dir; 
+      hy = shoulderY + 1;
+      sx2 = hx + (f.dir * 2); sy2 = hy + 2;
+    }
+  } 
+  else if (f.state == 2) { 
+    // ETAT 2 : SAUT -> Main au-dessus de la tete
+    hx = shoulderX; 
+    hy = shoulderY - 2;
+    sx2 = hx + (f.dir * 2); sy2 = hy - 2;
+  } 
+  else if (f.state == 3) { 
+    // ETAT 3 : ACCROUPI -> Bras tendu pour garder la distance
+    hx = shoulderX + (f.dir * 2); 
+    hy = shoulderY;
+    sx2 = hx + (f.dir * 3); sy2 = hy;
+  } 
+  else { 
+    // ETAT 0 : REPOS -> La main oscille le long du corps
+    hx = shoulderX + f.dir; 
+    hy = shoulderY + (sin(f.frame * 0.2) > 0 ? 1 : 0); 
+    sx2 = hx + (f.dir * 2); sy2 = hy - 2; // Lame vers le haut, position de garde classique
   }
-  matrix->drawLine(x + f.dir, y - 1, sx2, sy2, f.color);
+
+  // Securite anti-bug (zone d'effacement Y=26 a Y=31)
+  if (sy2 < 26) sy2 = 26; 
+  if (sy2 > 31) sy2 = 31;
+
+  // A. Dessin du bras (relie l'epaule a la main avec la couleur de l'equipe)
+  matrix->drawLine(shoulderX, shoulderY, hx, hy, f.color);
+
+  // B. Dessin de la lame complete
+  matrix->drawLine(hx, hy, sx2, sy2, f.color);
+
+  // C. Dessin de la main et du manche (par-dessus la base de la lame)
+  matrix->drawPixel(hx, hy, C_WHITE); // Un pixel blanc pour detacher la main du sabre et du corps
+  
+  // Le manche gris est place juste apres la main, en direction de la pointe (sx2, sy2)
+  int dirX = (sx2 > hx) ? 1 : ((sx2 < hx) ? -1 : 0);
+  int dirY = (sy2 > hy) ? 1 : ((sy2 < hy) ? -1 : 0);
+  matrix->drawPixel(hx + dirX, hy + dirY, C_GREY); 
 }
 
 void drawParticles() {
@@ -221,7 +338,7 @@ void drawBlasters() {
 void score_screen_starwars(bool reset = false) {
   if (!matrix) return;
   
-  static int last_s1 = -1, last_s2 = -1, last_b = -1;
+  static int last_s1 = -1, last_s2 = -1, last_b = -1, last_waiting = -1;
   static bool needsFullRedraw = false;
   static bool wasAnimActive = false;
   static unsigned long cooldown_timer = 0;
@@ -250,44 +367,42 @@ void score_screen_starwars(bool reset = false) {
 
   // 2. Gestion du Cooldown (On attend avant de montrer le score)
   if (millis() < cooldown_timer) {
-    // On peut laisser le dernier pixel ou effacer. On va laisser pour l'instant.
-    return; 
+    return;
   }
 
   // 3. Dessin du HUD (Scores/Noms)
-  if (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b) {
+  if (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b || waiting_goal != last_waiting) {
     matrix->fillRect(0, 0, 64, 25, C_BLACK);
     
-    // 1. DÉCOR COCKPIT ET NOMS AUTO-CENTRÉS
-    matrix->drawFastHLine(0, 0, 64, 0x18E3); matrix->drawFastHLine(0, 9, 64, 0x18E3);
-    matrix->drawFastVLine(31, 0, 10, 0x18E3); // Séparateur cockpit
+    // Dessin du cadre "Cockpit" Star Wars
+    matrix->drawFastHLine(0, 0, 64, 0x18E3);  
+    matrix->drawFastHLine(0, 9, 64, 0x18E3);  
+    matrix->drawFastVLine(31, 0, 10, 0x18E3); 
 
-    drawTeamName(team1_name, 0, C_BLUE);
-    drawTeamName(team2_name, 32, C_RED);
-
-    bool flash = (millis() / 250) % 2; 
-    bool p1_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P1) || flash;
-    bool p2_v = !bitRead(statut_game, SCORE_ADJUST) || !bitRead(statut_game, SELECT_P2) || flash;
-
-    // Scores Auto-Centrés
-    if (p1_v) drawScoreCentered(score_p1, 0, 12, C_BLUE);
-    if (p2_v) drawScoreCentered(score_p2, 32, 12, C_RED);
+    // Affichage dynamique des scores
+    drawScoreCentered(score_p1, 0, 12, C_BLUE);
+    drawScoreCentered(score_p2, 32, 12, C_RED);
     
-    matrix->setTextSize(1); matrix->setTextColor(C_YELLOW); 
-    // Compteur de balles miniaturisé (y=11)
-    matrix->drawRect(25, 11, 14, 9, 0x4208);
-    if (ball > 9) matrix->setCursor(26, 12); else matrix->setCursor(29, 12); 
+    // Compteur de balles central miniaturise
+    matrix->drawRect(25, 11, 14, 9, 0x4208); 
+    if (waiting_goal > 0) matrix->drawRect(24, 10, 16, 11, C_YELLOW); 
+    matrix->setCursor((ball > 9 ? 26 : 29), 12);
+    matrix->setTextColor(C_YELLOW);
     matrix->print(ball);
 
     needsFullRedraw = false;
-    last_s1 = score_p1; last_s2 = score_p2; last_b = ball;
+    last_s1 = score_p1; last_s2 = score_p2; last_b = ball; last_waiting = waiting_goal;
   }
+
+  // Affichage dynamique des noms (en dehors du bloc IF pour permettre le scroll permanent)
+  drawCenteredText(team1_name, 1, C_BLUE, 0, 31);   
+  drawCenteredText(team2_name, 1, C_RED, 32, 32);
 
   // --- NETTOYAGE LARGE (y=26 a 31) ---
   static unsigned long lastCombat = 0;
   if (millis() - lastCombat > 50) {
     lastCombat = millis();
-    matrix->fillRect(0, 26, 64, 6, C_BLACK); 
+    matrix->fillRect(0, 25, 64, 7, C_BLACK); 
     updateFighter(jedi1, jedi2);
     updateFighter(jedi2, jedi1);
     drawStickman(jedi1);
@@ -295,6 +410,30 @@ void score_screen_starwars(bool reset = false) {
     updateBlasters();
     drawBlasters();
     drawParticles();
+  }
+}
+
+void drawAnimStandby() {
+  if (tournament_mode) {
+    matrix->fillScreen(C_BLACK);
+    
+    // 1. Team 1 - Haut Gauche (Zone 32px)
+    drawCenteredText(team1_name, 0, C_BLUE, 0, 32);
+    
+    // 2. VS - Milieu (Remonte de 10 a 8)
+    drawCenteredText("VS", 8, C_WHITE, 0, 64);
+    
+    // 3. Team 2 - Bas Droite (Zone 32px, Remonte de 18 a 16)
+    drawCenteredText(team2_name, 16, C_RED, 32, 32);
+    
+    // 4. OK - Sous Team 2 (Remonte de 26 a 24)
+    if ((millis() / 500) % 2) {
+      drawCenteredText("OK", 24, C_YELLOW, 32, 32);
+    }
+  } else {
+    // Animation GIF Habituelle
+    extern void drawStarWarsGIF();
+    drawStarWarsGIF();
   }
 }
 
@@ -311,8 +450,7 @@ bool check_touch(int pin, volatile int &counter) {
   }
   else if (counter > 0) { counter--; }
   
-  if (counter > 10) return true; // Augmenté de 5 à 10 pour plus de stabilité
-  if (counter <= 0) return false;
+  if (counter > 10) return true; 
   return false;
 }
 
@@ -329,7 +467,7 @@ void handleAction(String act) {
   if (act == "M1") score_p1--; 
   if (act == "P2") score_p2++;
   if (act == "M2") score_p2--; 
-  if (act == "BIERE") { playSFX(4, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
+  if (act == "BIERE") { playSFX(SFX_GAMELLE, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
@@ -389,18 +527,70 @@ void handleGameLogic() {
 
   read_inputs_old();
 
-  extern void drawAnimStandby();
+  if (bitRead(statut_game, MATCH_FINISHED)) {
+    static unsigned long stateTime = 0;
+    static int phase = 0; // 0: Victoire, 1: Biere
+    
+    if (stateTime == 0) { 
+        stateTime = millis(); phase = 0; 
+        if (score_p1 > score_p2) requestAnimation(ANIM_VIC_J1);
+        else requestAnimation(ANIM_VIC_J2);
+    }
+    
+    if (isAnimationActive()) updateAnimations();
+    else {
+        if (phase == 0 && (millis() - stateTime > 7000)) { // 7s de victoire
+            phase = 1; stateTime = millis();
+            requestAnimation(ANIM_BIERE);
+            addLog("Pause Biere (15s)...");
+        }
+    }
+    score_screen_starwars();
+
+    // Transition automatique après la pause biere (ou si OK pressé)
+    bool skip = bitRead(inputs, 8);
+    if (skip || (phase == 1 && (millis() - stateTime > 15000))) {
+        extern bool autoLoadNextMatch();
+        bool nextFound = autoLoadNextMatch();
+
+        portENTER_CRITICAL(&stateMutex);
+        bitClear(statut_game, MATCH_FINISHED);
+        
+        if (nextFound && tournament_mode) {
+            bitSet(statut_game, RUN); // Lancement AUTO
+            bitClear(statut_game, START_GAME);
+        } else {
+            bitSet(statut_game, START_GAME); // Retour STANDBY
+        }
+        
+        ball = 11; score_p1 = 0; score_p2 = 0;
+        waiting_goal = 0;
+        portEXIT_CRITICAL(&stateMutex);
+
+        extern void playSFX(int id, bool loop);
+        playSFX(SFX_INTRO, true);
+        requestAnimation(ANIM_NONE);
+        stateTime = 0; phase = 0; // Reset pour le prochain match
+        if (skip) bitClear(inputs, 8);
+    }
+    return;
+  }
+
   if (bitRead(statut_game, START_GAME)) {
     if (isAnimationActive()) updateAnimations();
     else drawAnimStandby();
 
     if (bitRead(inputs, 8)) { // Touche OK
+      portENTER_CRITICAL(&stateMutex);
       score_p1 = 0; score_p2 = 0; ball = 11;
+      waiting_goal = 0;
       bitClear(statut_game, START_GAME); bitSet(statut_game, RUN);
+      portEXIT_CRITICAL(&stateMutex);
+      
       bitClear(inputs, 8); 
       requestAnimation(ANIM_NONE); 
+      playSFX(SFX_MATCH_PT, false); // On lance le jingle de debut (7 secondes)
       score_screen_starwars(true);
-      playSFX(8, false); // Signal départ
       Serial.println("[GAME] --- MATCH STARTED ! ---");
       static unsigned long startMatchMs = millis();
     }
@@ -411,8 +601,8 @@ void handleGameLogic() {
   static bool matchAmbienceTriggered = false;
   if (bitRead(statut_game, RUN) && !bitRead(statut_game, START_GAME)) {
       if (startMatchTimer == 0) startMatchTimer = millis();
-      if (!matchAmbienceTriggered && (millis() - startMatchTimer > 2500)) {
-          playSFX(7, true);
+      if (!matchAmbienceTriggered && (millis() - startMatchTimer > 7000)) { // Attente de 7 secondes pour le son 008
+          playSFX(SFX_AMBIANCE, true);
           matchAmbienceTriggered = true;
       }
   } else {
@@ -422,13 +612,19 @@ void handleGameLogic() {
 
   if (bitRead(statut_game, RUN)) {
     // Mode Correction
+    static unsigned long adjustStartTime = 0;
+    if (bitRead(inputs, 8) && !bitRead(statut_game, SCORE_ADJUST)) { 
+      bitSet(statut_game, SCORE_ADJUST); bitSet(statut_game, SELECT_P1); 
+      adjustStartTime = millis(); 
+    }
+
     if (bitRead(statut_game, SCORE_ADJUST)) {
       if (!bitRead(statut_game, PLAYER_CONFIRMED)) {
         if (bitRead(inputs, 9) || bitRead(inputs, 10)) { 
           if (bitRead(statut_game, SELECT_P1)) { bitClear(statut_game, SELECT_P1); bitSet(statut_game, SELECT_P2); }
           else { bitSet(statut_game, SELECT_P1); bitClear(statut_game, SELECT_P2); }
         }
-        if (bitRead(inputs, 8)) bitSet(statut_game, PLAYER_CONFIRMED);
+        if (bitRead(inputs, 8) && (millis() - adjustStartTime > 500)) bitSet(statut_game, PLAYER_CONFIRMED);
       } else {
         if (bitRead(inputs, 9)) { if(bitRead(statut_game, SELECT_P1)) score_p1--; else score_p2--; }
         if (bitRead(inputs, 10)) { if(bitRead(statut_game, SELECT_P1)) score_p1++; else score_p2++; }
@@ -438,29 +634,94 @@ void handleGameLogic() {
       return;
     }
 
-    if (bitRead(inputs, 8)) { bitSet(statut_game, SCORE_ADJUST); bitSet(statut_game, SELECT_P1); }
+    // Buts et Gamelles (Bits 11 a 14)
+    if (bitRead(inputs, 11)) { // But Cote Gauche (Point pour P1)
+        portENTER_CRITICAL(&stateMutex);
+        int pts = 1 + waiting_goal;
+        score_p1 += pts; // GAUCHE -> P1
+        waiting_goal = 0; bitClear(statut_game, DEMI);
+        bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2);
+        portEXIT_CRITICAL(&stateMutex);
 
-    // Buts et Gamelles (Bits 11 a 14 sont les FRONT MONTANTS)
-    if (bitRead(inputs, 11)) { score_p1++; ball--; playSFX(2); requestAnimation(ANIM_BUT_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
-    if (bitRead(inputs, 13)) { score_p2++; ball--; playSFX(3); requestAnimation(ANIM_BUT_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
-    if (bitRead(inputs, 12)) { score_p2--; playSFX(4); requestAnimation(ANIM_GAM_J1); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
-    if (bitRead(inputs, 14)) { score_p1--; playSFX(4); requestAnimation(ANIM_GAM_J2); matchAmbienceTriggered = false; startMatchTimer = millis(); } 
+        playSFX(SFX_BUT_J1); requestAnimation(ANIM_BUT_J1); 
+        if (ball > 0) ball--; 
+        addLog("B1");
+        matchAmbienceTriggered = true; 
+    } 
+    if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
+        portENTER_CRITICAL(&stateMutex);
+        int pts = 1 + waiting_goal;
+        score_p2 += pts; // DROITE -> P2
+        waiting_goal = 0; bitClear(statut_game, DEMI);
+        bitSet(statut_game, LAST_GOAL_P2); bitClear(statut_game, LAST_GOAL_P1);
+        portEXIT_CRITICAL(&stateMutex);
+
+        playSFX(SFX_BUT_J2); requestAnimation(ANIM_BUT_J2); 
+        if (ball > 0) ball--; 
+        addLog("B2");
+        matchAmbienceTriggered = true; 
+    } 
+    
+    // Gamelles (Regle de la Penalite : Retire un point a l'ADVERSAIRE)
+    if (bitRead(inputs, 12)) { // Gamelle Cote Gauche (Faite par P1)
+        portENTER_CRITICAL(&stateMutex);
+        score_p2--; // P2 perd un point
+        portEXIT_CRITICAL(&stateMutex);
+        playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J1); 
+        addLog("G1");
+        matchAmbienceTriggered = true; 
+    } 
+    if (bitRead(inputs, 14)) { // Gamelle Cote Droit (Faite par P2)
+        portENTER_CRITICAL(&stateMutex);
+        score_p1--; // P1 perd un point
+        portEXIT_CRITICAL(&stateMutex);
+        playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J2); 
+        addLog("G2");
+        matchAmbienceTriggered = true; 
+    } 
+
+    // --- LOGIQUE DU DEMI (+ et - ensemble) ---
+    if (bitRead(inputs, 9) && bitRead(inputs, 10)) { // LESS et MORE ensemble
+        if (bitRead(statut_game, LAST_GOAL_P1)) {
+            score_p1--; waiting_goal++; bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
+            addLog("DEMI J1: Point mis en attente.");
+        } else if (bitRead(statut_game, LAST_GOAL_P2)) {
+            score_p2--; waiting_goal++; bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
+            addLog("DEMI J2: Point mis en attente.");
+        }
+    }
 
     // Reset Long OK
     if (ok_buttom_start > 20) { 
+      portENTER_CRITICAL(&stateMutex);
       bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
-      matrix->fillScreen(C_BLACK); requestAnimation(ANIM_NONE); playSFX(1, true); 
+      ball = 11; score_p1 = 0; score_p2 = 0; waiting_goal = 0;
+      portEXIT_CRITICAL(&stateMutex);
+      matrix->fillScreen(C_BLACK); requestAnimation(ANIM_NONE); playSFX(SFX_INTRO, true); 
     }
     
     score_screen_starwars();
 
-    if (ball <= 0) { 
-      bitClear(statut_game, RUN); bitSet(statut_game, START_GAME); 
-      matrix->fillScreen(C_BLACK); 
-      if (score_p1 > score_p2) { playSFX(5); requestAnimation(ANIM_VIC_J1); } 
-      else { playSFX(6); requestAnimation(ANIM_VIC_J2); }
-      // Pause de 5 secondes pour savourer la victoire
-      for(int i=0; i<100; i++) { if(isAnimationActive()) updateAnimations(); delay(50); }
+    // BALLE DE MATCH (Golden Goal) : On lance une alerte une seule fois
+    static bool goldenGoalAlert = false;
+    if (ball <= 0 && score_p1 == score_p2 && !goldenGoalAlert) {
+        requestAnimation(ANIM_BALLE_MATCH); 
+        goldenGoalAlert = true;
+    }
+    if (!bitRead(statut_game, RUN)) goldenGoalAlert = false; // Reset pour le prochain match
+
+    // FIN DE MATCH : On passe en mode verrouille "MATCH_FINISHED"
+    if (ball <= 0 && score_p1 != score_p2) { 
+      bitClear(statut_game, RUN); 
+      bitSet(statut_game, MATCH_FINISHED);
+      
+      // MISE A JOUR AUTONOME DU TOURNOI (Backend-Driven)
+      extern void updateTournamentProgress(int s1, int s2);
+      updateTournamentProgress(score_p1, score_p2);
+
+      if (score_p1 > score_p2) { playSFX(SFX_VIC_J1); requestAnimation(ANIM_VIC_J1); } 
+      else { playSFX(SFX_VIC_J2); requestAnimation(ANIM_VIC_J2); }
+      Serial.println("[GAME] Match over. Autonomous update done.");
     }
   }
 }

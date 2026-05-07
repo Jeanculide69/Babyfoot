@@ -40,14 +40,18 @@
 #define RESET_PIN 25
 
 #define DELAY_BUTTOM 5
-#define SENS_SET     300 
+#define SENS_SET     700 
 
 #define RUN              0
 #define START_GAME       5
+#define MATCH_FINISHED   6
 #define SCORE_ADJUST     8
 #define SELECT_P1        9
 #define SELECT_P2        10
 #define PLAYER_CONFIRMED 11
+#define DEMI             12
+#define LAST_GOAL_P1     13
+#define LAST_GOAL_P2     14
 
 // --- TYPES ANIMATIONS ---
 #define ANIM_NONE    0
@@ -58,6 +62,17 @@
 #define ANIM_BIERE   5
 #define ANIM_VIC_J1  6
 #define ANIM_VIC_J2  7
+#define ANIM_BALLE_MATCH 8
+
+// --- DEFINITIONS AUDIO (SFX) ---
+#define SFX_INTRO      1
+#define SFX_BUT_J1     2
+#define SFX_BUT_J2     3
+#define SFX_GAMELLE    4
+#define SFX_VIC_J1     5
+#define SFX_VIC_J2     6
+#define SFX_AMBIANCE   7
+#define SFX_MATCH_PT   8
 
 #define C_BLACK   0x0000
 #define C_WHITE   0xFFFF
