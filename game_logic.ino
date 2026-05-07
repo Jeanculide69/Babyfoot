@@ -246,39 +246,39 @@ void drawStickman(Fighter &f) {
     // ETAT 1 : ATTAQUE (La main se deplace par rapport a l'epaule !)
     int attackPhase = f.frame % 12;
     if (attackPhase < 4) {
-      // Phase 1 : Armement -> Main tiree en arriere, sabre vers l'arriere
+      // Phase 1 : Armement
       hx = shoulderX - f.dir; 
       hy = shoulderY;
-      sx2 = hx - (f.dir * 2); sy2 = hy - 3;
+      sx2 = hx - (f.dir * 3); sy2 = hy - 3;
     } else if (attackPhase < 8) {
-      // Phase 2 : Frappe -> Bras tendu loin en avant !
+      // Phase 2 : Frappe
       hx = shoulderX + (f.dir * 2); 
       hy = shoulderY;
-      sx2 = hx + (f.dir * 3); sy2 = hy;
+      sx2 = hx + (f.dir * 4); sy2 = hy;
     } else {
-      // Phase 3 : Fin de course -> Main en bas
+      // Phase 3 : Fin de course
       hx = shoulderX + f.dir; 
       hy = shoulderY + 1;
-      sx2 = hx + (f.dir * 2); sy2 = hy + 2;
+      sx2 = hx + (f.dir * 3); sy2 = hy + 3;
     }
   } 
   else if (f.state == 2) { 
-    // ETAT 2 : SAUT -> Main au-dessus de la tete
+    // ETAT 2 : SAUT
     hx = shoulderX; 
     hy = shoulderY - 2;
-    sx2 = hx + (f.dir * 2); sy2 = hy - 2;
+    sx2 = hx + (f.dir * 3); sy2 = hy - 3;
   } 
   else if (f.state == 3) { 
-    // ETAT 3 : ACCROUPI -> Bras tendu pour garder la distance
+    // ETAT 3 : ACCROUPI
     hx = shoulderX + (f.dir * 2); 
     hy = shoulderY;
-    sx2 = hx + (f.dir * 3); sy2 = hy;
+    sx2 = hx + (f.dir * 4); sy2 = hy;
   } 
   else { 
-    // ETAT 0 : REPOS -> La main oscille le long du corps
+    // ETAT 0 : REPOS
     hx = shoulderX + f.dir; 
     hy = shoulderY + (sin(f.frame * 0.2) > 0 ? 1 : 0); 
-    sx2 = hx + (f.dir * 2); sy2 = hy - 2; // Lame vers le haut, position de garde classique
+    sx2 = hx + (f.dir * 3); sy2 = hy - 3; 
   }
 
   // Securite anti-bug (zone d'effacement Y=26 a Y=31)
@@ -288,16 +288,18 @@ void drawStickman(Fighter &f) {
   // A. Dessin du bras (relie l'epaule a la main avec la couleur de l'equipe)
   matrix->drawLine(shoulderX, shoulderY, hx, hy, f.color);
 
-  // B. Dessin de la lame complete
-  matrix->drawLine(hx, hy, sx2, sy2, f.color);
+  // B. Calcul de la direction du sabre pour placer le manche et le laser
+  int dX = (sx2 > hx) ? 1 : ((sx2 < hx) ? -1 : 0);
+  int dY = (sy2 > hy) ? 1 : ((sy2 < hy) ? -1 : 0);
 
-  // C. Dessin de la main et du manche (par-dessus la base de la lame)
-  matrix->drawPixel(hx, hy, f.color); // La main prend la couleur de l'equipe
-  
-  // Le manche gris est place juste apres la main, en direction de la pointe (sx2, sy2)
-  int dirX = (sx2 > hx) ? 1 : ((sx2 < hx) ? -1 : 0);
-  int dirY = (sy2 > hy) ? 1 : ((sy2 < hy) ? -1 : 0);
-  matrix->drawPixel(hx + dirX, hy + dirY, C_GREY); 
+  // C. Dessin du laser (2 pixels de couleur d'equipe)
+  matrix->drawLine(hx + dX*2, hy + dY*2, sx2, sy2, f.color);
+
+  // D. Dessin du manche (Gris moyen)
+  matrix->drawPixel(hx + dX, hy + dY, C_GREY); 
+
+  // E. Dessin de la main (Couleur equipe)
+  matrix->drawPixel(hx, hy, f.color);
 }
 
 void drawParticles() {
