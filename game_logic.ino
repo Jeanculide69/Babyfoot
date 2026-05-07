@@ -102,6 +102,7 @@ extern MatrixPanel_I2S_DMA *matrix;
 // Variables globales déportées dans le fichier principal
 extern String team1_name, team2_name;
 extern bool tournament_mode;
+extern bool is_ap_mode;
 extern volatile int score_p1, score_p2, ball;
 extern volatile uint32_t statut_game;
 extern volatile unsigned int inputs;
@@ -413,7 +414,28 @@ void score_screen_starwars(bool reset = false) {
   }
 }
 
+void drawAPMode() {
+  static uint32_t lastPulse = 0;
+  static bool pulseState = false;
+  if (millis() - lastPulse > 500) { lastPulse = millis(); pulseState = !pulseState; }
+
+  matrix->fillScreen(C_BLACK);
+  drawCenteredText("WIFI SETUP", 1, C_YELLOW, 0, 64);
+  drawCenteredText("Babyfoot-Force", 11, C_BLUE, 0, 64);
+  
+  if (pulseState) {
+    drawCenteredText("192.168.4.1", 22, C_WHITE, 0, 64);
+  } else {
+    drawCenteredText("CONNECTER ICI", 22, C_GOLD, 0, 64);
+  }
+}
+
 void drawAnimStandby() {
+  if (is_ap_mode) {
+    drawAPMode();
+    return;
+  }
+
   if (tournament_mode) {
     matrix->fillScreen(C_BLACK);
     
