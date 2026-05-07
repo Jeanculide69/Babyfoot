@@ -48,7 +48,7 @@ void saveWiFiConfig(String s, String p) {
 
 // --- PROTECTION MULTI-CŒUR ---
 portMUX_TYPE stateMutex = portMUX_INITIALIZER_UNLOCKED;
-portMUX_TYPE audioMutex = portMUX_INITIALIZER_UNLOCKED;
+SemaphoreHandle_t audioMutex;
 SemaphoreHandle_t fsMutex;
 
 // --- LOGS SYSTÈME ---
@@ -219,9 +219,12 @@ void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2) {
     (uint8_t)(checksum >> 8), (uint8_t)(checksum & 0xFF), 0xEF
   };
   
-  portENTER_CRITICAL(&audioMutex);
-  Serial1.write(buf, 10);
-  portEXIT_CRITICAL(&audioMutex);
+  if (audioMutex != NULL) {
+    if (xSemaphoreTake(audioMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      Serial1.write(buf, 10);
+      xSemaphoreGive(audioMutex);
+    }
+  }
   
   Serial.printf("[AUDIO] Send CMD: 0x%02X | P1: 0x%02X | P2: 0x%02X\n", cmd, p1, p2);
 }
@@ -242,6 +245,7 @@ extern void handleAction(String act);
 
 void setup() {
   fsMutex = xSemaphoreCreateMutex();
+  audioMutex = xSemaphoreCreateMutex();
   Serial.begin(115200);
   addLog("Systeme Pret ! babyfoot.local");
   Serial.println("[SYSTEM] Ready.");
