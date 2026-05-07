@@ -82,6 +82,8 @@
 #define C_BLUE    0x001F
 #define C_CYAN    0x07FF
 #define C_MAGENTA 0xF81F
+#define C_GOLD    0xFEA0
+#define C_ORANGE  0xFD20
 
 // --- STRUCTURES POUR ANIMATIONS ---
 struct Particle {
