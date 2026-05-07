@@ -39,9 +39,9 @@ void drawBoldNumber(int n, int x, int y, uint16_t color) {
 
 // Calcule la largeur réelle en pixels d'un nombre dessiné avec drawBoldDigit
 int getScoreWidth(int n) {
-  if (n < 0) return 15;      // Signe "-" + Chiffre
-  else if (n > 9) return 18;  // Deux chiffres serres
-  return 8;                  // Un chiffre seul
+  if (n < 0) return 20;      // Signe "-" + Chiffre
+  else if (n > 9) return 24;  // Deux chiffres (marge augmentée pour centrage)
+  return 12;                 // Un chiffre seul
 }
 
 void drawScoreCentered(int n, int zoneX, int y, uint16_t color) {
