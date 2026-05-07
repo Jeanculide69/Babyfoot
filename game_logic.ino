@@ -292,7 +292,7 @@ void drawStickman(Fighter &f) {
   matrix->drawLine(hx, hy, sx2, sy2, f.color);
 
   // C. Dessin de la main et du manche (par-dessus la base de la lame)
-  matrix->drawPixel(hx, hy, C_WHITE); // Un pixel blanc pour detacher la main du sabre et du corps
+  matrix->drawPixel(hx, hy, f.color); // La main prend la couleur de l'equipe
   
   // Le manche gris est place juste apres la main, en direction de la pointe (sx2, sy2)
   int dirX = (sx2 > hx) ? 1 : ((sx2 < hx) ? -1 : 0);
