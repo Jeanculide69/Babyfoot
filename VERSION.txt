@@ -1,8 +1,8 @@
-VERSION 0.3 STAR WARS - MASTER CONSOLE
+VERSION 1.5 STAR WARS - MASTER CONSOLE
 ----------------------------------
-- Score illimite (0-99) avec centrage auto
-- Portail Web tout-en-un (Flash) ultra-rapide
-- Moteur de tournoi dynamique
-- Console de logs et telemetrie
-- HUD Adaptatif (Noms Bold)
-- Mise a jour OTA fonctionnelle
+- Capteurs physiques (Bascule Latch) hyper robustes (séparation de la logique matérielle et web)
+- Boutons tactiles fonctionnels (seuil 700)
+- Animations de clignotement des scores (Jaune)
+- Trenches de Logs séparés : Système (erreurs) et TV (spectacle)
+- Mise a jour OTA fonctionnelle (bypass MD5)
+- Portail Web tout-en-un ultra-rapide

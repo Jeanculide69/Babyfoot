@@ -58,7 +58,7 @@ void drawStarWarsGIF() {
 
       // Miroir Ambilight UNIQUEMENT sur les bords
       if (x == 0 || x == 63 || y == 31) {
-        edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+        edge_color(x, y, strip1.Color(r * 17, g * 17, b * 17));
       }
     }
   }
@@ -83,7 +83,7 @@ void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
       
       // Ambilight "Old School" : Miroir du bord UNIQUEMENT
       if (x == 0 || x == 63 || y == 31) {
-        edge_color(x, y, strip1.Color(r << 4, g << 4, b << 4));
+        edge_color(x, y, strip1.Color(r * 17, g * 17, b * 17));
       }
     }
   }

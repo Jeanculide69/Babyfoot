@@ -4,7 +4,7 @@
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-#include <HTTPUpdateServer.h>
+#include <Update.h>
 #include "config.h"
 #include "web_pages.h"
 
@@ -58,6 +58,14 @@ void addLog(String m) {
   system_logs[log_idx % 20] = m;
   log_idx++;
   Serial.println("[LOG] " + m);
+}
+
+// --- EVENEMENTS TV (Spectacle) ---
+String tv_events[10];
+int tv_idx = 0;
+void addTvEvent(String m) {
+  tv_events[tv_idx % 10] = m;
+  tv_idx++;
 }
 
 // --- MOTEUR DE TOURNOI C++ (Backend-Driven) ---
@@ -232,7 +240,6 @@ void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2) {
 volatile int target_vol = 25;
 
 WebServer server(80);
-HTTPUpdateServer httpUpdater;
 
 void handleStatusLegacy() {
   String json = "{\"p1\":" + String(score_p1) + ",\"p2\":" + String(score_p2) + ",\"ball\":" + String(ball) + "}";
@@ -265,6 +272,7 @@ void setup() {
   fsMutex = xSemaphoreCreateMutex();
   audioMutex = xSemaphoreCreateMutex();
   Serial.begin(115200);
+  addLog("Babyfoot Force " + String(VERSION_STR));
   addLog("Systeme Pret ! babyfoot.local");
   Serial.println("[SYSTEM] Ready.");
   
@@ -328,6 +336,21 @@ void setup() {
         JsonObject entry = logs.createNestedObject();
         entry["t"] = millis()/1000;
         entry["m"] = system_logs[idx];
+      }
+    }
+    String out; serializeJson(doc, out);
+    server.send(200, "application/json", out);
+  });
+
+  server.on("/api/tv_events", HTTP_GET, []() {
+    StaticJsonDocument<1024> doc;
+    JsonArray logs = doc.createNestedArray("logs");
+    for(int i=0; i<10; i++) {
+      int idx = (tv_idx - 1 - i + 10) % 10;
+      if(tv_events[idx] != "") {
+        JsonObject entry = logs.createNestedObject();
+        entry["t"] = millis()/1000;
+        entry["m"] = tv_events[idx];
       }
     }
     String out; serializeJson(doc, out);
@@ -539,7 +562,32 @@ void setup() {
     }
   });
 
-  httpUpdater.setup(&server, "/do_update");
+  // --- HANDLER MAJ OTA MANUEL (PERMISSIF) ---
+  server.on("/do_update", HTTP_POST, []() {
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    delay(1000);
+    ESP.restart();
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      Serial.printf("Update Start: %s\n", upload.filename.c_str());
+      if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { 
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (Update.end(true)) { 
+        Serial.printf("Update Success: %u octets. Redemarrage...\n", upload.totalSize);
+      } else {
+        Update.printError(Serial);
+      }
+    }
+  });
+
   const char* headerkeys[] = {"Content-Length"};
   server.collectHeaders(headerkeys, 1);
   server.begin();
@@ -580,7 +628,7 @@ void setup() {
 
   matrix = new MatrixPanel_I2S_DMA(mxconfig);
   matrix->begin();
-  matrix->setRotation(2); // <--- ROTATION 180° pour remettre l'ecran a l'endroit
+  matrix->setRotation(0); // <--- ROTATION 0° (Inversé par rapport à avant)
   matrix->setBrightness8(60); 
   matrix->clearScreen();
 

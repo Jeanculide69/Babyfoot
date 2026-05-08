@@ -1,6 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define VERSION_STR "V1.5 - 08/05/2026"
+
 #include <Arduino.h>
 
 // --- CONFIGURATION MATERIELLE (SYNCHRO DMA) ---
@@ -40,8 +42,7 @@
 #define RESET_PIN 25
 
 #define DELAY_BUTTOM 5
-#define SENS_SET     700 
-
+#define SENS_SET     700              // Set to active buttom (valeur environ 600 quand appuyé)
 #define RUN              0
 #define START_GAME       5
 #define MATCH_FINISHED   6

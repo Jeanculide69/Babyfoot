@@ -112,6 +112,7 @@ volatile int less_buttom_start = 0;
 volatile int more_buttom_start = 0;
 volatile int ok_buttom_start = 0;
 volatile int waiting_goal = 0;
+volatile int last_points = 0;
 
 Particle particles[5];
 Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};
@@ -386,6 +387,16 @@ void score_screen_starwars(bool reset = false) {
   }
 
   // 3. Dessin du HUD (Scores/Noms)
+  static bool last_blink = false;
+  bool is_adjust = bitRead(statut_game, SCORE_ADJUST);
+  bool blink = is_adjust && ((millis() / 250) % 2);
+  
+  // Force le rafraîchissement au changement d'état du clignotement pour animer sans scintiller
+  if (is_adjust && (blink != last_blink)) {
+      last_blink = blink;
+      needsFullRedraw = true;
+  }
+
   if (needsFullRedraw || score_p1 != last_s1 || score_p2 != last_s2 || ball != last_b || waiting_goal != last_waiting) {
     matrix->fillRect(0, 0, 64, 25, C_BLACK);
     
@@ -394,15 +405,27 @@ void score_screen_starwars(bool reset = false) {
     matrix->drawFastHLine(0, 9, 64, 0x18E3);  
     matrix->drawFastVLine(31, 0, 10, 0x18E3); 
 
-    // Affichage dynamique des scores (avec clignotement en mode correction)
-    bool blink = (statut_game & (1 << SCORE_ADJUST)) && ((millis() / 250) % 2);
-    
-    if (!(blink && (statut_game & (1 << SELECT_P1)))) {
-        drawScoreCentered(score_p1, 0, 12, C_BLUE);
+    bool is_confirmed = bitRead(statut_game, PLAYER_CONFIRMED);
+    bool sel_p1 = bitRead(statut_game, SELECT_P1);
+    bool sel_p2 = bitRead(statut_game, SELECT_P2);
+
+    uint16_t color_p1 = C_BLUE;
+    uint16_t color_p2 = C_RED;
+
+    if (is_adjust) {
+        if (!is_confirmed) {
+            // Etape 1 : Sélection du joueur (Le score clignote)
+            if (sel_p1 && blink) color_p1 = C_BLACK;
+            if (sel_p2 && blink) color_p2 = C_BLACK;
+        } else {
+            // Etape 2 : Modification du score (Clignote en JAUNE pour confirmer l'édition)
+            if (sel_p1) color_p1 = blink ? C_YELLOW : C_BLUE;
+            if (sel_p2) color_p2 = blink ? C_YELLOW : C_RED;
+        }
     }
-    if (!(blink && (statut_game & (1 << SELECT_P2)))) {
-        drawScoreCentered(score_p2, 32, 12, C_RED);
-    }
+
+    if (color_p1 != C_BLACK) drawScoreCentered(score_p1, 0, 12, color_p1);
+    if (color_p2 != C_BLACK) drawScoreCentered(score_p2, 32, 12, color_p2);
     
     // Compteur de balles central miniaturise
     matrix->drawRect(25, 11, 14, 9, 0x4208); 
@@ -482,6 +505,7 @@ void drawAnimStandby() {
 void setupGame() {
   score_p1 = 0; score_p2 = 0; ball = 11; statut_game = 0;
   bitSet(statut_game, START_GAME);
+  raz_but(); // Reset des verrous au démarrage
   if (matrix) matrix->fillScreen(C_BLACK);
 }
 
@@ -492,12 +516,12 @@ bool check_touch(int pin, volatile int &counter) {
   }
   else if (counter > 0) { counter--; }
   
-  if (counter > 10) return true; 
+  if (counter > DELAY_BUTTOM) return true; 
   return false;
 }
 
 // --- FLAGS DE SIMULATION GLOBAUX (Pour WiFi et Serial) ---
-static bool sim_ok = false, sim_b1 = false, sim_g1 = false, sim_b2 = false, sim_g2 = false;
+static volatile bool sim_ok = false, sim_b1 = false, sim_g1 = false, sim_b2 = false, sim_g2 = false;
 
 void handleAction(String act) {
   if (act == "B1") sim_b1 = true;
@@ -509,6 +533,17 @@ void handleAction(String act) {
   if (act == "M1") score_p1--; 
   if (act == "P2") score_p2++;
   if (act == "M2") score_p2--; 
+  if (act == "DEMI") {
+    if (bitRead(statut_game, LAST_GOAL_P1)) {
+        score_p1 -= last_points; waiting_goal = last_points; 
+        bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
+        addLog("PORTAIL: DEMI J1");
+    } else if (bitRead(statut_game, LAST_GOAL_P2)) {
+        score_p2 -= last_points; waiting_goal = last_points; 
+        bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
+        addLog("PORTAIL: DEMI J2");
+    }
+  }
   if (act == "BIERE") { playSFX(SFX_GAMELLE, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
@@ -529,10 +564,31 @@ void read_inputs_old() {
   bool less_raw = check_touch(BTN_LESS, less_buttom_start);
   bool more_raw = check_touch(BTN_MORE, more_buttom_start);
 
-  bool g_r = !digitalRead(GOAL_RIGHT) || sim_b2;
-  bool g_l = !digitalRead(GOAL_LEFT) || sim_b1;
-  bool gam_r = !digitalRead(GAMELLE_RIGHT) || sim_g2;
-  bool gam_l = !digitalRead(GAMELLE_LEFT) || sim_g1;
+  static bool last_phys_gr = false, last_phys_gl = false, last_phys_gamr = false, last_phys_gaml = false;
+  
+  bool phys_gr = digitalRead(GOAL_RIGHT);
+  bool phys_gl = digitalRead(GOAL_LEFT);
+  bool phys_gamr = digitalRead(GAMELLE_RIGHT);
+  bool phys_gaml = digitalRead(GAMELLE_LEFT);
+
+  // Fronts montants physiques (0 -> 1)
+  bool edge_gr = phys_gr && !last_phys_gr; last_phys_gr = phys_gr;
+  bool edge_gl = phys_gl && !last_phys_gl; last_phys_gl = phys_gl;
+  bool edge_gamr = phys_gamr && !last_phys_gamr; last_phys_gamr = phys_gamr;
+  bool edge_gaml = phys_gaml && !last_phys_gaml; last_phys_gaml = phys_gaml;
+
+  // Déclencheur final : Front physique OU Simulation Web
+  bool g_r = edge_gr || sim_b2;
+  bool g_l = edge_gl || sim_b1;
+  bool gam_r = edge_gamr || sim_g2;
+  bool gam_l = edge_gaml || sim_g1;
+
+  // Logs de debug pour le test des capteurs
+  static bool log_gr = false, log_gl = false, log_gamr = false, log_gaml = false;
+  if (phys_gr != log_gr) { log_gr = phys_gr; Serial.println("[DEBUG CAPTEUR] GOAL_RIGHT (Pin 36) -> " + String(phys_gr)); }
+  if (phys_gl != log_gl) { log_gl = phys_gl; Serial.println("[DEBUG CAPTEUR] GOAL_LEFT (Pin 34) -> " + String(phys_gl)); }
+  if (phys_gamr != log_gamr) { log_gamr = phys_gamr; Serial.println("[DEBUG CAPTEUR] GAMELLE_RIGHT (Pin 39) -> " + String(phys_gamr)); }
+  if (phys_gaml != log_gaml) { log_gaml = phys_gaml; Serial.println("[DEBUG CAPTEUR] GAMELLE_LEFT (Pin 35) -> " + String(phys_gaml)); }
 
   // Reset des flags de simulation
   sim_ok = sim_b1 = sim_g1 = sim_b2 = sim_g2 = false;
@@ -549,11 +605,14 @@ void read_inputs_old() {
   update_edge(1, less_raw); 
   update_edge(2, more_raw);
 
-  auto update_sensor = [](int bit, bool current) {
-    if (current) { 
+  auto update_sensor = [](int bit, bool triggered) {
+    if (triggered) { 
       if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
-      else { bitClear(inputs, bit + 8); }
-    } else { bitClear(inputs, bit); bitClear(inputs, bit + 8); }
+      else { bitClear(inputs, bit + 8); } 
+    } else { 
+      bitClear(inputs, bit); 
+      bitClear(inputs, bit + 8); 
+    }
   };
 
   update_sensor(3, g_l);
@@ -562,9 +621,30 @@ void read_inputs_old() {
   update_sensor(6, gam_r);
 }
 
+void raz_but(){
+    int max_attempts = 5;
+    while((!digitalRead(GOAL_RIGHT) || !digitalRead(GOAL_LEFT) || !digitalRead(GAMELLE_RIGHT) || !digitalRead(GAMELLE_LEFT)) && max_attempts > 0){
+        digitalWrite(RESET_PIN, 0);
+        unsigned long over_time = 0;
+        while((!digitalRead(GOAL_RIGHT) || !digitalRead(GOAL_LEFT) || !digitalRead(GAMELLE_RIGHT) || !digitalRead(GAMELLE_LEFT))) {
+           over_time++;
+           if (over_time > 100000) break; // Timeout rapide pour ne pas ralentir le jeu
+        }
+        delay(5);
+        digitalWrite(RESET_PIN, 1);
+        delay(5);
+        max_attempts--;
+    }
+    
+    // Si la balle reste bloquée devant le capteur physiquement
+    if (max_attempts == 0) {
+        Serial.println("[ATTENTION] Un capteur est toujours declenche (balle bloquee ?) -> on continue.");
+    }
+}
+
 void handleGameLogic() {
   static unsigned long lastLoop = 0;
-  if (millis() - lastLoop < 60) return; // Limite à ~15 FPS
+  if (millis() - lastLoop < 30) return; // Limite à ~33 FPS pour plus de réactivité
   lastLoop = millis();
 
   read_inputs_old();
@@ -629,11 +709,13 @@ void handleGameLogic() {
       bitClear(statut_game, START_GAME); bitSet(statut_game, RUN);
       portEXIT_CRITICAL(&stateMutex);
       
+      raz_but(); // Nettoyage total au coup d'envoi
       bitClear(inputs, 8); 
       requestAnimation(ANIM_NONE); 
       playSFX(SFX_MATCH_PT, false); // On lance le jingle de debut (7 secondes)
       score_screen_starwars(true);
       Serial.println("[GAME] --- MATCH STARTED ! ---");
+      addTvEvent("lance");
       static unsigned long startMatchMs = millis();
     }
   }
@@ -677,58 +759,74 @@ void handleGameLogic() {
     }
 
     // Buts et Gamelles (Bits 11 a 14)
-    if (bitRead(inputs, 11)) { // But Cote Gauche (Point pour P1)
-        portENTER_CRITICAL(&stateMutex);
-        int pts = 1 + waiting_goal;
-        score_p1 += pts; // GAUCHE -> P1
-        waiting_goal = 0; bitClear(statut_game, DEMI);
-        bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2);
-        portEXIT_CRITICAL(&stateMutex);
+    static unsigned long lastGoalMs = 0;
+    if (millis() - lastGoalMs > 3000) { // Lockout de 3s pour éviter les doubles comptes
+        if (bitRead(inputs, 11)) { // But Cote Gauche (Point pour P1)
+            portENTER_CRITICAL(&stateMutex);
+            last_points = 1 + waiting_goal;
+            score_p1 += last_points; // GAUCHE -> P1
+            waiting_goal = 0; bitClear(statut_game, DEMI);
+            bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2);
+            portEXIT_CRITICAL(&stateMutex);
 
-        playSFX(SFX_BUT_J1); requestAnimation(ANIM_BUT_J1); 
-        if (ball > 0) ball--; 
-        addLog("B1");
-        matchAmbienceTriggered = true; 
-    } 
-    if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
-        portENTER_CRITICAL(&stateMutex);
-        int pts = 1 + waiting_goal;
-        score_p2 += pts; // DROITE -> P2
-        waiting_goal = 0; bitClear(statut_game, DEMI);
-        bitSet(statut_game, LAST_GOAL_P2); bitClear(statut_game, LAST_GOAL_P1);
-        portEXIT_CRITICAL(&stateMutex);
+            playSFX(SFX_BUT_J1); requestAnimation(ANIM_BUT_J1); 
+            if (ball > 0) ball--; 
+            addLog("B1"); addTvEvent("B1");
+            raz_but();
+            lastGoalMs = millis();
+            matchAmbienceTriggered = true; 
+        } 
+        if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
+            portENTER_CRITICAL(&stateMutex);
+            last_points = 1 + waiting_goal;
+            score_p2 += last_points; // DROITE -> P2
+            waiting_goal = 0; bitClear(statut_game, DEMI);
+            bitSet(statut_game, LAST_GOAL_P2); bitClear(statut_game, LAST_GOAL_P1);
+            portEXIT_CRITICAL(&stateMutex);
 
-        playSFX(SFX_BUT_J2); requestAnimation(ANIM_BUT_J2); 
-        if (ball > 0) ball--; 
-        addLog("B2");
-        matchAmbienceTriggered = true; 
-    } 
-    
-    // Gamelles (Regle de la Penalite : Retire un point a l'ADVERSAIRE)
-    if (bitRead(inputs, 12)) { // Gamelle Cote Gauche (Faite par P1)
-        portENTER_CRITICAL(&stateMutex);
-        score_p2--; // P2 perd un point
-        portEXIT_CRITICAL(&stateMutex);
-        playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J1); 
-        addLog("G1");
-        matchAmbienceTriggered = true; 
-    } 
-    if (bitRead(inputs, 14)) { // Gamelle Cote Droit (Faite par P2)
-        portENTER_CRITICAL(&stateMutex);
-        score_p1--; // P1 perd un point
-        portEXIT_CRITICAL(&stateMutex);
-        playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J2); 
-        addLog("G2");
-        matchAmbienceTriggered = true; 
-    } 
+            playSFX(SFX_BUT_J2); requestAnimation(ANIM_BUT_J2); 
+            if (ball > 0) ball--; 
+            addLog("B2"); addTvEvent("B2");
+            raz_but();
+            lastGoalMs = millis();
+            matchAmbienceTriggered = true; 
+        } 
+        
+        // Gamelles (Regle de la Penalite : Retire un point a l'ADVERSAIRE)
+        if (bitRead(inputs, 12)) { // Gamelle Cote Gauche (Faite par P1)
+            portENTER_CRITICAL(&stateMutex);
+            score_p2--; // P2 perd un point
+            portEXIT_CRITICAL(&stateMutex);
+            playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J1); 
+            addLog("G1"); addTvEvent("G1");
+            raz_but();
+            lastGoalMs = millis();
+            matchAmbienceTriggered = true; 
+        } 
+        if (bitRead(inputs, 14)) { // Gamelle Cote Droit (Faite par P2)
+            portENTER_CRITICAL(&stateMutex);
+            score_p1--; // P1 perd un point
+            portEXIT_CRITICAL(&stateMutex);
+            playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J2); 
+            addLog("G2"); addTvEvent("G2");
+            raz_but();
+            lastGoalMs = millis();
+            matchAmbienceTriggered = true; 
+        } 
+    }
 
     // --- LOGIQUE DU DEMI (+ et - ensemble) ---
-    if (bitRead(inputs, 9) && bitRead(inputs, 10)) { // LESS et MORE ensemble
+    // On utilise les bits d'état (1 et 2) et non les fronts (9 et 10) pour plus de souplesse
+    if (bitRead(inputs, 1) && bitRead(inputs, 2)) { 
         if (bitRead(statut_game, LAST_GOAL_P1)) {
-            score_p1--; waiting_goal++; bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
+            score_p1 -= last_points; 
+            waiting_goal = last_points; 
+            bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
             addLog("DEMI J1: Point mis en attente.");
         } else if (bitRead(statut_game, LAST_GOAL_P2)) {
-            score_p2--; waiting_goal++; bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
+            score_p2 -= last_points; 
+            waiting_goal = last_points; 
+            bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
             addLog("DEMI J2: Point mis en attente.");
         }
     }
@@ -758,6 +856,7 @@ void handleGameLogic() {
     if (ball <= 0 && score_p1 != score_p2) { 
       bitClear(statut_game, RUN); 
       bitSet(statut_game, MATCH_FINISHED);
+      addTvEvent(score_p1 > score_p2 ? "victoire_p1" : "victoire_p2");
       
       // MISE A JOUR AUTONOME DU TOURNOI (Backend-Driven)
       extern void updateTournamentProgress(int s1, int s2);

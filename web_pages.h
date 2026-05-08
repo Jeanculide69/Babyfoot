@@ -18,7 +18,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         .score-val { font-size: 64px; font-weight: 900; margin: 10px 0; }
         .jedi { color: var(--jedi); text-shadow: 0 0 15px var(--jedi); }
         .sith { color: var(--sith); text-shadow: 0 0 15px var(--sith); }
-        .btn { display: block; padding: 12px; background: #21262d; border: 1px solid #30363d; border-radius: 10px; color: white; text-decoration: none; font-weight: bold; text-align: center; cursor: pointer; margin: 5px 0; }
+        .btn { display: block; padding: 12px; background: #21262d; border: 1px solid #30363d; border-radius: 10px; color: white; text-decoration: none; font-weight: bold; text-align: center; cursor: pointer; margin: 5px 0; user-select: none; -webkit-user-select: none; }
         .btn:active { transform: scale(0.95); }
         .btn-jedi { border-color: var(--jedi); color: var(--jedi); }
         .btn-sith { border-color: var(--sith); color: var(--sith); }
@@ -73,7 +73,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                     <div class="btn btn-sith" onclick="doAct('G2')">GAMELLE</div>
                 </div>
             </div>
-            <div class="btn btn-gold" style="margin-top:15px;" onclick="doAct('OK')">START / RESET / OK</div>
+            <div class="btn btn-gold" style="margin-top:15px;" onclick="doAct('DEMI')">DEMI (ANNULER DERNIER BUT)</div>
+            <div class="btn btn-gold" style="margin-top:5px;" onclick="doAct('OK')">START / RESET / OK</div>
             
             <div class="slider-card">
                 <span class="slider-label">Luminosite Matrice LED</span>
@@ -123,7 +124,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
     </div>
     <script>
-        function doAct(id){ fetch('/action?id='+id); }
+        function doAct(id){ 
+            console.log("Action sent: " + id);
+            fetch('/action?id='+id).catch(e => console.error("Action fail:", e)); 
+        }
         function doSlider(id, val){ fetch('/action?id='+id+'&val='+val); }
         function testSFX(id){ fetch('/api/test_sfx?id='+id); }
         function testAnim(id){ fetch('/api/test_anim?id='+id); }
@@ -237,7 +241,7 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                     document.getElementById('timer').innerText = m + ":" + s;
                 }
             });
-            fetch('/api/logs').then(r => r.json()).then(data => {
+            fetch('/api/tv_events').then(r => r.json()).then(data => {
                 const t1 = document.getElementById('t1_name').innerText;
                 const t2 = document.getElementById('t2_name').innerText;
                 document.getElementById('log-box').innerHTML = data.logs.filter(l => !l.m.startsWith("Tournoi: O") && !l.m.startsWith("Tournoi: M") && !l.m.startsWith("Tournoi: D")).map(l => {
@@ -247,6 +251,8 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                     if(msg == "G1") msg = `<span style="color:var(--jedi)">Incroyable tir de ${t1} ! La Force est puissante.</span>`;
                     if(msg == "G2") msg = `<span style="color:var(--sith)">Une gamelle du côté obscur par ${t2} !</span>`;
                     if(msg.includes("lance")) msg = `⚔️ Le duel commence : ${t1} vs ${t2}`;
+                    if(msg == "victoire_p1") msg = `🏆 VICTOIRE DE ${t1} ! La Galaxie est sauvée.`;
+                    if(msg == "victoire_p2") msg = `🏆 VICTOIRE DE ${t2} ! Le côté obscur triomphe.`;
                     return `<div class="log-entry">${msg}</div>`;
                 }).join('');
             });
@@ -377,22 +383,28 @@ const char UPDATE_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8"><title>Mise à jour</title>
+    <meta charset="UTF-8"><title>Mise à jour Force</title>
     <style>
         :root { --gold: #ffe000; --bg: #0d1117; }
         body { background: var(--bg); color: #c9d1d9; font-family: sans-serif; text-align: center; padding: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
         h1 { color: var(--gold); }
-        .btn { display: inline-block; padding: 15px 30px; background: #21262d; border: 1px solid #30363d; border-radius: 10px; color: white; text-decoration: none; font-weight: bold; margin: 10px; transition: 0.2s; }
-        .btn:hover { background: #30363d; }
+        .card { background: #161b22; padding: 30px; border-radius: 15px; border: 1px solid #30363d; }
+        .btn { display: inline-block; padding: 15px 30px; background: #21262d; border: 1px solid #30363d; border-radius: 10px; color: white; text-decoration: none; font-weight: bold; margin: 10px; cursor: pointer; }
         .btn-gold { border-color: var(--gold); color: var(--gold); }
+        #prg { margin-top: 20px; color: var(--gold); display: none; }
     </style>
 </head>
 <body>
-    <h1>MISE À JOUR FIRMWARE</h1>
-    <p>Attention, la mise à jour redémarrera l'appareil.</p>
-    <a href="/do_update" class="btn btn-gold">ACCÉDER À L'INTERFACE DE MISE À JOUR</a>
+    <div class="card">
+        <h1>MISE À JOUR V1.1</h1>
+        <p>Sélectionnez le fichier <b>.bin</b> compilé.</p>
+        <form method='POST' action='/do_update' enctype='multipart/form-data' id='upload_form'>
+            <input type='file' name='update' style="margin-bottom:20px;"><br>
+            <input type='submit' value='LANCER LA MISE À JOUR' class="btn btn-gold" onclick="document.getElementById('prg').style.display='block'">
+        </form>
+        <div id="prg">Transfert en cours... Ne pas éteindre le babyfoot.</div>
+    </div>
     <br>
-    <a href="/wifi" class="btn">CONFIGURER LE WIFI</a>
     <a href="/" class="btn">RETOUR CONSOLE</a>
 </body>
 </html>
