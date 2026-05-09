@@ -509,7 +509,7 @@ void setupGame() {
   if (matrix) matrix->fillScreen(C_BLACK);
 }
 
-bool check_touch(int pin, volatile int &counter) {
+bool check_touch(int pin, volatile int &counter, bool current_state) {
   int val = touchRead(pin);
   if (val < SENS_SET && val > 1) { 
     if (counter < 100) counter++; 
@@ -517,7 +517,8 @@ bool check_touch(int pin, volatile int &counter) {
   else if (counter > 0) { counter--; }
   
   if (counter > DELAY_BUTTOM) return true; 
-  return false;
+  else if (counter <= 0) return false;
+  else return current_state; // Hysteresis!
 }
 
 // --- FLAGS DE SIMULATION GLOBAUX (Pour WiFi et Serial) ---
@@ -563,9 +564,9 @@ void read_inputs_old() {
     if (cmd == "OK") { sim_ok = true; Serial.println("[SIM] OK Command"); }
   }
 
-  bool ok_raw = check_touch(BTN_OK, ok_buttom_start) || sim_ok;
-  bool less_raw = check_touch(BTN_LESS, less_buttom_start);
-  bool more_raw = check_touch(BTN_MORE, more_buttom_start);
+  bool ok_raw = check_touch(BTN_OK, ok_buttom_start, bitRead(inputs, 0)) || sim_ok;
+  bool less_raw = check_touch(BTN_LESS, less_buttom_start, bitRead(inputs, 1));
+  bool more_raw = check_touch(BTN_MORE, more_buttom_start, bitRead(inputs, 2));
 
   static bool last_phys_gr = false, last_phys_gl = false, last_phys_gamr = false, last_phys_gaml = false;
   
