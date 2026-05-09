@@ -102,6 +102,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 <div class="btn btn-test" onclick="testAnim(6)">VIC. BLEU</div>
                 <div class="btn btn-test" onclick="testAnim(7)">VIC. ROUGE</div>
                 <div class="btn btn-test" onclick="testAnim(8)">BALLE MATCH</div>
+                <div class="btn btn-test" onclick="testAnim(9)">DEMI</div>
             </div>
             <div style="font-size: 10px; color: #8b949e; margin: 12px 0 8px; text-transform: uppercase; letter-spacing: 1px;">Sons (SFX)</div>
             <div class="test-grid">

@@ -101,6 +101,13 @@ void requestAnimation(int type) {
   active_anim = type;
   start_anim_ms = millis();
   
+  if (type == ANIM_NONE) {
+      gif.close();
+      if (gifFile) gifFile.close();
+      playingGif = false;
+      return;
+  }
+  
   if (type == ANIM_BALLE_MATCH) playSFX(SFX_MATCH_PT, false); 
   
   switch(type) {
@@ -122,7 +129,7 @@ void requestAnimation(int type) {
   }
 }
 
-bool isAnimationActive() { return playingGif || active_anim != ANIM_NONE; }
+bool isAnimationActive() { return active_anim != ANIM_NONE; }
 
 // ==========================================
 // FAKE AMBILIGHT (V2.0)

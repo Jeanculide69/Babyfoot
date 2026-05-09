@@ -721,4 +721,5 @@ void loop() {
   extern void updateLEDs();
   handleGameLogic();
   updateLEDs();
+  delay(1); // Libère du temps CPU pour le décodage GIF et le WiFi
 }

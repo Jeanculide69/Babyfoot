@@ -599,9 +599,8 @@ void read_inputs_old() {
   auto update_edge = [](int bit, bool current) {
     if (current) { 
       if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
-      else { bitClear(inputs, bit + 8); } 
     }
-    else { bitClear(inputs, bit); bitClear(inputs, bit + 8); }
+    else { bitClear(inputs, bit); }
   };
 
   update_edge(0, ok_raw); 
@@ -611,10 +610,8 @@ void read_inputs_old() {
   auto update_sensor = [](int bit, bool triggered) {
     if (triggered) { 
       if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
-      else { bitClear(inputs, bit + 8); } 
     } else { 
       bitClear(inputs, bit); 
-      bitClear(inputs, bit + 8); 
     }
   };
 
@@ -696,8 +693,8 @@ void handleGameLogic() {
         playSFX(SFX_INTRO, true);
         requestAnimation(ANIM_NONE);
         stateTime = 0; phase = 0; // Reset pour le prochain match
-        if (skip) bitClear(inputs, 8);
     }
+    inputs &= 0x00FF; // Clear les fronts (edges) après traitement
     return;
   }
 
@@ -872,4 +869,6 @@ void handleGameLogic() {
       Serial.println("[GAME] Match over. Autonomous update done.");
     }
   }
+  
+  inputs &= 0x00FF; // Clear les fronts (edges) en fin de frame 30ms
 }
