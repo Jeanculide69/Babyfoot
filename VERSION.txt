@@ -1,8 +1,13 @@
-VERSION 1.5 STAR WARS - MASTER CONSOLE
+VERSION 2.0 STAR WARS - MASTER CONSOLE
 ----------------------------------
-- Capteurs physiques (Bascule Latch) hyper robustes (séparation de la logique matérielle et web)
-- Boutons tactiles fonctionnels (seuil 700)
-- Animations de clignotement des scores (Jaune)
-- Trenches de Logs séparés : Système (erreurs) et TV (spectacle)
-- Mise a jour OTA fonctionnelle (bypass MD5)
-- Portail Web tout-en-un ultra-rapide
+- Capteurs physiques : logique Active Haut (0 = Repos, 1 = Déclenché) avec hardware latch (Reset avec impulsion LOW sur Pin 25).
+- Lecture des capteurs : Scan en continu ultra-rapide (débridé du Timer de 30ms) pour garantir la détection.
+- Système de Fichiers : Migration vers schéma de partition "Default 4MB with spiffs" (1.5MB alloués au LittleFS pour les GIFs).
+- Gestionnaire de fichiers complet via l'interface web (/files) : Upload Drag & Drop, Suppression unitaire, Formatage FS.
+- Support des animations GIF dynamiques (via AnimatedGIF) pour Veille, Buts, Gamelles, Demi, Balle de match.
+- Mode Tournoi désactivé par défaut au démarrage pour afficher automatiquement l'animation de Veille.
+- Boutons tactiles fonctionnels (seuil de déclenchement à 700).
+- Animations NeoPixel de clignotement des scores (Ambilight).
+- Séparation des Logs : Console Système (erreurs) et Dashboard TV Live (spectacle).
+- Mises à jour OTA (Over The Air) fonctionnelles via WiFi (bypass MD5 intégré).
+- Portail Web complet : Configuration WiFi, Gestion Fichiers, TV Live, Tournoi.

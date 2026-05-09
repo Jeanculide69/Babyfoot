@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define VERSION_STR "V1.5 - 08/05/2026"
+#define VERSION_STR "V2.0 - 08/05/2026"
 
 #include <Arduino.h>
 
@@ -64,6 +64,7 @@
 #define ANIM_VIC_J1  6
 #define ANIM_VIC_J2  7
 #define ANIM_BALLE_MATCH 8
+#define ANIM_DEMI    9
 
 // --- DEFINITIONS AUDIO (SFX) ---
 #define SFX_INTRO      1

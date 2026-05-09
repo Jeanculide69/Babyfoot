@@ -1,122 +1,254 @@
 #include "config.h"
 #include <Arduino.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <LittleFS.h>
+#include <AnimatedGIF.h>
+#include <Adafruit_NeoPixel.h>
 
 extern MatrixPanel_I2S_DMA *matrix;
 extern void playSFX(int id, bool loop);
+extern Adafruit_NeoPixel strip1;
+extern Adafruit_NeoPixel strip2;
+extern void color_neo(uint32_t c);
+extern volatile unsigned long statut_game;
 
-// Inclusion des donnees d'animation (Format 444)
-#include "animations/veille.c"
-#include "animations/but_bleu.c"
-#include "animations/but_rouge.c"
-#include "animations/gamelle_bleu.c"
-#include "animations/gamelle_rouge.c"
-#include "animations/pause_biere.c"
-#include "animations/victoire_bleu.c"
-#include "animations/victoire_rouge.c"
-#include "animations/balle_match.c"
+// Prototypes pour AnimatedGIF (évite les erreurs de pré-processeur Arduino)
+void * GIFOpenFile(const char *fname, int32_t *pSize);
+void GIFCloseFile(void *pHandle);
+int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen);
+int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition);
+void GIFDraw(GIFDRAW *pDraw);
 
-
-// Les constantes ANIM_ sont maintenant centralisées dans config.h
+AnimatedGIF gif;
+File gifFile;
 
 int active_anim = ANIM_NONE;
-int anim_frame = 0;
-unsigned long last_anim_ms = 0;
+bool playingGif = false;
+unsigned long nextFrameTime = 0;
 unsigned long start_anim_ms = 0;
+
+// ==========================================
+// CALLBACKS ANIMATEDGIF (LittleFS)
+// ==========================================
+void * GIFOpenFile(const char *fname, int32_t *pSize) {
+  gifFile = LittleFS.open(fname, "r");
+  if (gifFile) {
+    *pSize = gifFile.size();
+    return (void *)&gifFile;
+  }
+  return NULL;
+}
+void GIFCloseFile(void *pHandle) {
+  if (gifFile) gifFile.close();
+}
+int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen) {
+    int32_t iBytesRead = iLen;
+    if ((pFile->iSize - pFile->iPos) < iLen)
+       iBytesRead = pFile->iSize - pFile->iPos;
+    if (iBytesRead <= 0) return 0;
+    iBytesRead = (int32_t)gifFile.read(pBuf, iBytesRead);
+    pFile->iPos = gifFile.position();
+    return iBytesRead;
+}
+int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition) {
+  gifFile.seek(iPosition);
+  pFile->iPos = (int32_t)gifFile.position();
+  return pFile->iPos;
+}
+
+void GIFDraw(GIFDRAW *pDraw) {
+  uint8_t *s;
+  uint16_t *d, *usPalette;
+  int x, y, iWidth;
+  usPalette = pDraw->pPalette;
+  y = pDraw->iY + pDraw->y; // current line
+  if (y >= 32 || pDraw->iX >= 64) return;
+  s = pDraw->pPixels;
+  iWidth = pDraw->iWidth;
+  if (iWidth + pDraw->iX > 64) iWidth = 64 - pDraw->iX;
+  
+  if (pDraw->ucHasTransparency) {
+    uint8_t c, ucTransparent = pDraw->ucTransparent;
+    for (x=0; x<iWidth; x++) {
+      c = *s++;
+      if (c != ucTransparent) {
+        matrix->drawPixel(pDraw->iX + x, y, usPalette[c]);
+      }
+    }
+  } else {
+    for (int x=0; x<iWidth; x++) {
+       matrix->drawPixel(pDraw->iX + x, y, usPalette[*s++]);
+    }
+  }
+}
+
+// ==========================================
+// CONTROLEUR D'ANIMATION
+// ==========================================
+
+void startGIF(const char *fname, bool silent = false) {
+    if (gifFile) gifFile.close();
+    if (gif.open(fname, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
+        playingGif = true;
+        nextFrameTime = millis();
+    } else {
+        if(!silent) Serial.printf("❌ Erreur : Impossible de lire %s\n", fname);
+        playingGif = false; // Explicite
+    }
+}
 
 void requestAnimation(int type) {
   active_anim = type;
-  anim_frame = 0;
   start_anim_ms = millis();
   
-  // Declenchement sonore automatique pour les animations speciales
-  if (type == ANIM_BALLE_MATCH) playSFX(SFX_MATCH_PT); 
+  if (type == ANIM_BALLE_MATCH) playSFX(SFX_MATCH_PT, false); 
+  
+  switch(type) {
+    case ANIM_BUT_J1: startGIF("/But Bleu.gif"); break;
+    case ANIM_BUT_J2: startGIF("/But Rouge.gif"); break;
+    case ANIM_GAM_J1: startGIF("/gamelle_bleu.gif"); break;
+    case ANIM_GAM_J2: startGIF("/gamelle_rouge.gif"); break;
+    case ANIM_BIERE:  startGIF("/pause_biere.gif"); break;
+    case ANIM_VIC_J1: 
+      startGIF("/victoire_bleu.gif", true); 
+      if(!playingGif) startGIF("/Victoire Bleu.gif"); 
+      break;
+    case ANIM_VIC_J2: 
+      startGIF("/victoire_rouge.gif", true); 
+      if(!playingGif) startGIF("/Victoire Rouge.gif"); 
+      break;
+    case ANIM_BALLE_MATCH: startGIF("/balle_de_match_expert.gif"); break;
+    case ANIM_DEMI: startGIF("/demi.gif"); break;
+  }
 }
 
-bool isAnimationActive() { return active_anim != ANIM_NONE; }
+bool isAnimationActive() { return playingGif || active_anim != ANIM_NONE; }
 
-int current_frame_standby = 0;
-unsigned long last_anim_millis = 0;
+// ==========================================
+// FAKE AMBILIGHT (V2.0)
+// ==========================================
+void updateFakeAmbilight() {
+   if (!playingGif) return;
+   if (active_anim == ANIM_BUT_J1) {
+      // Pulsation Bleue
+      int val = (millis() % 500 > 250) ? 255 : 50;
+      color_neo(strip1.Color(0, 0, val));
+   } else if (active_anim == ANIM_BUT_J2) {
+      // Pulsation Rouge
+      int val = (millis() % 500 > 250) ? 255 : 50;
+      color_neo(strip1.Color(val, 0, 0));
+   } else if (active_anim == ANIM_GAM_J1 || active_anim == ANIM_GAM_J2) {
+      // Clignotement Alterné (Police)
+      if ((millis() / 150) % 2 == 0) color_neo(strip1.Color(255, 0, 0));
+      else color_neo(strip1.Color(0, 0, 255));
+   } else if (active_anim == ANIM_VIC_J1) {
+      // Feu d'artifice Bleu/Vert
+      if ((millis() / 200) % 2 == 0) color_neo(strip1.Color(0, 255, 0));
+      else color_neo(strip1.Color(0, 100, 255));
+   } else if (active_anim == ANIM_VIC_J2) {
+      // Feu d'artifice Rouge/Orange
+      if ((millis() / 200) % 2 == 0) color_neo(strip1.Color(255, 50, 0));
+      else color_neo(strip1.Color(255, 0, 0));
+   } else if (active_anim == ANIM_BALLE_MATCH) {
+      // Pulsation rapide Tension
+      int val = (millis() % 300 > 150) ? 255 : 20;
+      color_neo(strip1.Color(val, val, val));
+   } else if (active_anim == ANIM_DEMI) {
+      // Stroboscope Jaune (Avertissement)
+      int val = (millis() % 200 > 100) ? 255 : 0;
+      color_neo(strip1.Color(val, val, 0));
+   } else if (active_anim == ANIM_BIERE) {
+      // Jaune biere fixe
+      color_neo(strip1.Color(255, 200, 0));
+   }
+   strip1.show();
+   strip2.show();
+}
 
+// ==========================================
+// MISE A JOUR PRINCIPALE
+// ==========================================
 void drawStarWarsGIF() {
   if (!matrix) return;
-  if (millis() - last_anim_millis < 80) return;
-  last_anim_millis = millis();
-
-  extern void edge_color(int x, int y, uint32_t color);
-  for (int y = 0; y < 32; y++) {
-    for (int x = 0; x < 64; x++) {
-      int pix = y * 64 + x;
-      uint16_t color444 = veille_data[current_frame_standby][pix];
-      
-      uint8_t r = (color444 >> 8) & 0x0F;
-      uint8_t g = (color444 >> 4) & 0x0F;
-      uint8_t b = color444 & 0x0F;
-      
-      uint32_t c565 = matrix->color444(r, g, b);
-      matrix->drawPixel(x, y, c565);
-
-      // Miroir Ambilight UNIQUEMENT sur les bords
-      if (x == 0 || x == 63 || y == 31) {
-        edge_color(x, y, strip1.Color(r * 17, g * 17, b * 17));
+  // Mode Veille -> on joue veille.gif en boucle
+  if (!playingGif) {
+      static unsigned long lastVeilleTry = 0;
+      static bool firstVeille = true;
+      if (firstVeille || millis() - lastVeilleTry > 5000) { // On ne réessaie que toutes les 5s si ça échoue (sauf la 1ere fois)
+          lastVeilleTry = millis();
+          firstVeille = false;
+          startGIF("/veille.gif", true); // Essayer en minuscule d'abord
+          if(!playingGif) startGIF("/Veille.gif"); // Fallback
       }
-    }
   }
-
-  current_frame_standby++;
-  if (current_frame_standby >= VEILLE_FRAME_COUNT) {
-    current_frame_standby = 0;
-  }
-}
-
-void drawGenericAnim(const uint16_t data[][2048], int max_frames, bool loop) {
-  if (millis() - last_anim_ms < 100) return;
-  last_anim_ms = millis();
-  extern void edge_color(int x, int y, uint32_t color);
-  for (int y = 0; y < 32; y++) {
-    for (int x = 0; x < 64; x++) {
-      uint16_t c = data[anim_frame][y * 64 + x];
-      uint8_t r = (c >> 8) & 0x0F;
-      uint8_t g = (c >> 4) & 0x0F;
-      uint8_t b = c & 0x0F;
-      matrix->drawPixel(x, y, matrix->color444(r, g, b));
-      
-      // Ambilight "Old School" : Miroir du bord UNIQUEMENT
-      if (x == 0 || x == 63 || y == 31) {
-        edge_color(x, y, strip1.Color(r * 17, g * 17, b * 17));
-      }
-    }
-  }
-  anim_frame++;
-  if (anim_frame >= max_frames) {
-    if (loop) {
-        anim_frame = 0;
-    } else if (active_anim == ANIM_BALLE_MATCH && (millis() - start_anim_ms < 7000)) {
-        anim_frame = max_frames - 1; // On reste sur la derniere image
-    } else if ((active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) && (millis() - start_anim_ms < 5000)) {
-        anim_frame = max_frames - 1; // On reste sur la derniere image (Victoire)
-    } else {
-      if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) {
-        requestAnimation(ANIM_BIERE);
+  
+  if (playingGif && millis() >= nextFrameTime) {
+      int delayMs = 0;
+      if (gif.playFrame(false, &delayMs)) {
+          nextFrameTime = millis() + delayMs;
       } else {
-        // Fin d'un but, de la bière ou de la balle de match -> on relance l'ambiance
-        if (active_anim == ANIM_BIERE) playSFX(SFX_INTRO, true); 
-        else playSFX(SFX_AMBIANCE, true); 
-        active_anim = ANIM_NONE;
+          // Boucle sur veille : On ferme proprement et on relancera au prochain cycle avec le délai
+          gif.close();
+          playingGif = false;
       }
-    }
+      // Veille Ambilight : Respiration lente
+      int br = 50 + 50 * sin(millis() / 1000.0);
+      color_neo(strip1.Color(br, br, br));
+      strip1.show();
+      strip2.show();
   }
 }
 
 void updateAnimations() {
-  switch(active_anim) {
-    case ANIM_BUT_J1: drawGenericAnim(but_bleu_data, BUT_BLEU_FRAME_COUNT, false); break;
-    case ANIM_BUT_J2: drawGenericAnim(but_rouge_data, BUT_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_GAM_J1: drawGenericAnim(gamelle_bleu_data, GAMELLE_BLEU_FRAME_COUNT, false); break;
-    case ANIM_GAM_J2: drawGenericAnim(gamelle_rouge_data, GAMELLE_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_BIERE:  drawGenericAnim(pause_biere_data, PAUSE_BIERE_FRAME_COUNT, true); break;
-    case ANIM_VIC_J1: drawGenericAnim(victoire_bleu_data, VICTOIRE_BLEU_FRAME_COUNT, false); break;
-    case ANIM_VIC_J2: drawGenericAnim(victoire_rouge_data, VICTOIRE_ROUGE_FRAME_COUNT, false); break;
-    case ANIM_BALLE_MATCH: drawGenericAnim(balle_match_data, BALLE_MATCH_FRAME_COUNT, false); break;
+  if (active_anim == ANIM_NONE) {
+      return;
+  }
+
+  // Securité : Force l'arrêt des animations après un certain temps
+  unsigned long maxDuration = 3000; 
+  if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) maxDuration = 5000;
+  if (active_anim == ANIM_BIERE) maxDuration = 15000;
+  if (active_anim == ANIM_BALLE_MATCH) maxDuration = 7000;
+
+  bool forceStop = (millis() - start_anim_ms > maxDuration);
+
+  // Si le fichier GIF n'a pas pu être lu, on zappe directement la durée de l'animation
+  if (!playingGif) {
+      if (forceStop) {
+          // On passe à la suite (simule la fin)
+          if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) {
+            requestAnimation(ANIM_BIERE);
+          } else {
+            if (active_anim == ANIM_BIERE) playSFX(SFX_INTRO, true); 
+            else playSFX(SFX_AMBIANCE, true); 
+            active_anim = ANIM_NONE;
+          }
+      }
+      return;
+  }
+
+  if (playingGif) {
+     updateFakeAmbilight();
+
+     if (millis() >= nextFrameTime || forceStop) {
+        int delayMs = 0;
+        // Si forceStop, on simule la fin du GIF
+        if (!forceStop && gif.playFrame(false, &delayMs)) {
+            nextFrameTime = millis() + delayMs;
+        } else {
+            // FIN DE L'ANIMATION
+            gif.close();
+            playingGif = false;
+            
+            // Logique d'enchaînement
+            if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) {
+              requestAnimation(ANIM_BIERE);
+            } else {
+              if (active_anim == ANIM_BIERE) playSFX(SFX_INTRO, true); 
+              else playSFX(SFX_AMBIANCE, true); 
+              active_anim = ANIM_NONE;
+            }
+        }
+     }
   }
 }

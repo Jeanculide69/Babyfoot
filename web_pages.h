@@ -120,8 +120,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <a href="/tv" class="btn">TV LIVE</a>
             <a href="/logs" class="btn">LOGS</a>
             <a href="/wifi" class="btn">WIFI</a>
-            <a href="/update" class="btn" style="grid-column: span 2; color:#8b949e">UPDATE</a>
+            <a href="/files" class="btn" style="color:var(--gold); border-color:var(--gold);">FICHIERS</a>
+            <a href="/update" class="btn">MAJ OTA</a>
         </div>
+        <a href="javascript:doAct('REBOOT')" class="btn" style="background:#d73a49; margin-top:10px;">REBOOT ESP32</a>
     </div>
     <script>
         function doAct(id){ 
@@ -141,7 +143,187 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 if(typeof syncResults === 'function') syncResults(data); 
             });
         }
-        setInterval(update, 3000); update();
+        setInterval(update, 3000); 
+        update();
+    </script>
+</body>
+</html>
+)rawliteral";
+
+const char FILES_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestionnaire de Fichiers</title>
+    <style>
+        :root { --gold: #ffe000; --bg: #0d1117; --card: #161b22; --danger: #f85149; }
+        body { background: var(--bg); color: #c9d1d9; font-family: sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { max-width: 600px; width: 100%; }
+        .card { background: var(--card); border: 1px solid #30363d; border-radius: 15px; padding: 25px; margin-bottom: 20px; }
+        h1 { color: var(--gold); text-transform: uppercase; font-size: 1.2rem; margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; display: flex; justify-content: space-between; }
+        .file-list { margin-top: 15px; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+        .file-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: rgba(255,255,255,0.02); border-bottom: 1px solid #30363d; }
+        .file-item:last-child { border-bottom: none; }
+        .file-item:hover { background: rgba(255,255,255,0.05); }
+        .file-name { font-weight: bold; color: #58a6ff; font-family: monospace; }
+        .file-size { color: #8b949e; font-size: 0.9em; margin-right: 15px; }
+        .btn { padding: 8px 15px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: white; cursor: pointer; text-decoration: none; font-weight: bold; }
+        .btn:hover { background: #30363d; }
+        .btn-danger { color: var(--danger); border-color: var(--danger); background: transparent; padding: 5px 10px; }
+        .btn-danger:hover { background: var(--danger); color: white; }
+        .btn-gold { background: var(--gold); color: black; padding: 12px 20px; border: none; font-size: 1.1em; width: 100%; border-radius: 10px; }
+        .dropzone { border: 2px dashed #30363d; border-radius: 10px; padding: 40px 20px; text-align: center; color: #8b949e; margin-bottom: 20px; cursor: pointer; transition: 0.3s; }
+        .dropzone.dragover { border-color: var(--gold); background: rgba(255,224,0,0.1); color: var(--gold); }
+        .progress-bar { width: 100%; height: 10px; background: #30363d; border-radius: 5px; overflow: hidden; margin-top: 10px; display: none; }
+        .progress-fill { height: 100%; background: var(--gold); width: 0%; transition: 0.2s; }
+        #status { text-align: center; margin-top: 10px; font-weight: bold; color: var(--gold); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button class="btn" style="margin-bottom:20px;" onclick="location.href='/'">⬅ RETOUR CONSOLE</button>
+        
+        <div class="card">
+            <h1>UPLOADER UN FICHIER</h1>
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+                <div style="font-size: 2em; margin-bottom: 10px;">📁</div>
+                Glissez-déposez vos fichiers GIF ici<br>ou cliquez pour parcourir
+            </div>
+            <input type="file" id="file-input" style="display:none;" multiple accept=".gif,.json">
+            <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+            <div id="status"></div>
+        </div>
+
+        <div class="card">
+            <h1>FICHIERS SUR L'ESP32 <span style="font-size:0.7em; color:#8b949e" id="fs-usage"></span></h1>
+            <div class="file-list" id="file-list">
+                <div style="padding:20px; text-align:center; color:#8b949e">Chargement des fichiers...</div>
+            </div>
+            <button class="btn btn-danger" style="width:100%; margin-top:15px; padding:10px;" onclick="formatFS()">⚠️ FORMATER LA MEMOIRE (TOUT EFFACER)</button>
+        </div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const progressBar = document.getElementById('progress-bar');
+        const progressFill = document.getElementById('progress-fill');
+        const statusEl = document.getElementById('status');
+
+        // Drag & Drop
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            uploadFile(files[0], 0, files);
+        }
+
+        function uploadFile(file, index, files) {
+            if (index >= files.length) {
+                statusEl.innerText = "Upload terminé !";
+                setTimeout(() => { progressBar.style.display = 'none'; statusEl.innerText = ""; }, 3000);
+                loadFiles();
+                return;
+            }
+
+            statusEl.innerText = `Envoi de ${file.name} (${index + 1}/${files.length})...`;
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+
+            const formData = new FormData();
+            formData.append('update', file, file.name);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload_gif', true);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    progressFill.style.width = percent + '%';
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    uploadFile(files[index + 1], index + 1, files); // Fichier suivant
+                } else {
+                    statusEl.innerText = `Erreur lors de l'envoi de ${file.name}`;
+                    statusEl.style.color = 'var(--danger)';
+                }
+            };
+            xhr.onerror = () => { statusEl.innerText = "Erreur de connexion"; statusEl.style.color = 'var(--danger)'; };
+            xhr.send(formData);
+        }
+
+        function loadFiles() {
+            fetch('/api/list_files').then(r => r.json()).then(data => {
+                if (data.length === 0) {
+                    fileList.innerHTML = '<div style="padding:20px; text-align:center; color:#8b949e">Aucun fichier trouvé.</div>';
+                    document.getElementById('fs-usage').innerText = "0 KB";
+                    return;
+                }
+                
+                let totalSize = 0;
+                let html = '';
+                // Trier par ordre alphabétique
+                data.sort((a,b) => a.n.localeCompare(b.n));
+                
+                data.forEach(f => {
+                    totalSize += f.s;
+                    const sizeKB = (f.s / 1024).toFixed(1);
+                    html += `
+                        <div class="file-item">
+                            <div>
+                                <div class="file-name">${f.n}</div>
+                            </div>
+                            <div style="display:flex; align-items:center;">
+                                <div class="file-size ${f.s == 0 ? 'file-empty' : ''}" style="${f.s == 0 ? 'color:var(--danger); font-weight:bold;' : ''}">
+                                    ${f.s == 0 ? '0.0 KB (VIDE!)' : sizeKB + ' KB'}
+                                </div>
+                                <button class="btn btn-danger" onclick="deleteFile('${f.n}')">X</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                fileList.innerHTML = html;
+                document.getElementById('fs-usage').innerText = `${(totalSize / 1024).toFixed(1)} KB Total`;
+            });
+        }
+
+        function deleteFile(name) {
+            if(confirm(`Voulez-vous vraiment supprimer le fichier ${name} ?`)) {
+                fetch('/api/delete_file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `filename=${encodeURIComponent(name)}`
+                }).then(r => {
+                    if(r.ok) loadFiles();
+                    else alert("Erreur lors de la suppression.");
+                });
+            }
+        }
+
+        function formatFS() {
+            if(confirm("ATTENTION : Cela va supprimer TOUS les fichiers (GIFs, WiFi, Tournoi). Etes-vous sûr ?")) {
+                statusEl.innerText = "Formatage en cours... Patientez...";
+                fetch('/api/format_fs').then(r => {
+                    alert("Mémoire formatée. L'ESP32 va redémarrer.");
+                    location.href = '/';
+                });
+            }
+        }
+
+        loadFiles();
     </script>
 </body>
 </html>
@@ -166,7 +348,11 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
         .ball-val { font-size: 5vw; font-weight: bold; }
         .bottom-grid { flex: 1; display: grid; grid-template-columns: 400px 1fr; gap: 20px; overflow: hidden; margin-top: 20px; }
         .logs-panel { background: var(--glass); border: 1px solid #444; border-radius: 15px; padding: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        .log-entry { font-size: 1.1vw; border-bottom: 1px solid #222; padding: 12px 0; color: #aaa; font-family: monospace; }
+        @keyframes flash {
+            0% { background-color: rgba(255, 215, 0, 0.5); transform: scale(1.02); }
+            100% { background-color: rgba(255,255,255,0.05); transform: scale(1); }
+        }
+        .log-entry { font-size: 1.1vw; border-bottom: 1px solid #222; padding: 12px 0; color: #aaa; font-family: monospace; animation: flash 0.8s ease-out; }
         .bracket-panel { background: var(--glass); border: 1px solid #444; border-radius: 15px; padding: 20px; display: flex; flex-direction: column; overflow: hidden; }
         .bracket-scroll { flex: 1; display: flex; align-items: center; justify-content: center; gap: 50px; }
         .round { display: flex; flex-direction: column; gap: 25px; align-items: center; }
@@ -202,10 +388,72 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
         <div class="bracket-panel"><div style="color:var(--gold); font-size:1vw; margin-bottom:10px; font-weight:bold;">TABLEAU DU TOURNOI</div><div class="bracket-scroll" id="bracket-box"></div></div>
     </div>
     <div id="overlay" class="overlay"></div>
+    <div style="position:fixed; bottom:20px; right:20px; z-index:1000;">
+        <button onclick="fetch('/action?id=OK')" style="background:var(--gold); color:black; font-weight:bold; padding:15px 30px; border:none; border-radius:10px; cursor:pointer; font-size:1.5vw; box-shadow: 0 0 20px rgba(0,0,0,0.5);">BOUTON OK</button>
+    </div>
     <script>
         let tournament = { teams: [], rounds: [], activeMatch: null };
         let startTime = Date.now();
         let isRunning = false;
+
+        let ws = new WebSocket('ws://' + location.hostname + ':81/');
+        ws.onmessage = function(event) {
+            let data = JSON.parse(event.data);
+            const t1 = document.getElementById('t1_name').innerText;
+            const t2 = document.getElementById('t2_name').innerText;
+            let msg = data.m;
+            
+            const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+            if(msg == "B1") {
+                const phrases = [
+                    `🔵 [BUT JEDI] La Force est avec ${t1} !`,
+                    `🔵 [BUT JEDI] Tir de précision d'un X-Wing !`,
+                    `🔵 [BUT JEDI] ${t1} transperce la défense Sith !`,
+                    `🔵 [BUT JEDI] Un coup de sabre laser fatal !`
+                ];
+                msg = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
+            }
+            if(msg == "B2") {
+                const phrases = [
+                    `🔴 [BUT SITH] ${t2} contre-attaque avec fureur !`,
+                    `🔴 [BUT SITH] Le côté obscur marque un point !`,
+                    `🔴 [BUT SITH] La vengeance des Sith est en marche !`,
+                    `🔴 [BUT SITH] Vador est fier de ce tir !`
+                ];
+                msg = `<span style="color:var(--sith)">${random(phrases)}</span>`;
+            }
+            if(msg == "G1") {
+                const phrases = [
+                    `💎 [GAMELLE] Explosion de l'Étoile Noire par ${t1} !`,
+                    `💎 [GAMELLE] Maître Yoda valide ce tir légendaire !`,
+                    `💎 [GAMELLE] La Force est surpuissante chez ${t1} !`
+                ];
+                msg = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
+            }
+            if(msg == "G2") {
+                const phrases = [
+                    `🔥 [GAMELLE] L'Empereur jubile ! Frappe de ${t2} !`,
+                    `🔥 [GAMELLE] Une perturbation majeure par ${t2} !`,
+                    `🔥 [GAMELLE] Le côté obscur triomphe sur ce coup !`
+                ];
+                msg = `<span style="color:var(--sith)">${random(phrases)}</span>`;
+            }
+            if(msg == "demi_j1" || msg == "demi_j2") {
+                const phrases = [
+                    `✨ [DEMI] Une perturbation dans la Force... Point annulé !`,
+                    `✨ [DEMI] Saut dans l'hyper-espace ! On revient en arrière.`,
+                    `✨ [DEMI] Manipulation mentale... Le point disparaît !`
+                ];
+                msg = `<span style="color:var(--gold)">${random(phrases)}</span>`;
+            }
+            if(msg.includes("lance")) msg = `⚔️ <b>LE DUEL COMMENCE</b> : ${t1} vs ${t2}`;
+            if(msg == "victoire_p1") msg = `🏆 VICTOIRE DE ${t1} ! La Galaxie est sauvée.`;
+            if(msg == "victoire_p2") msg = `🏆 VICTOIRE DE ${t2} ! Le côté obscur triomphe.`;
+            
+            let logBox = document.getElementById('log-box');
+            logBox.innerHTML = `<div class="log-entry">${msg}</div>` + logBox.innerHTML;
+        };
 
         function update() {
             fetch('/api/status').then(r => r.json()).then(data => {
@@ -240,21 +488,6 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                     let s = (diff%60).toString().padStart(2,'0');
                     document.getElementById('timer').innerText = m + ":" + s;
                 }
-            });
-            fetch('/api/tv_events').then(r => r.json()).then(data => {
-                const t1 = document.getElementById('t1_name').innerText;
-                const t2 = document.getElementById('t2_name').innerText;
-                document.getElementById('log-box').innerHTML = data.logs.filter(l => !l.m.startsWith("Tournoi: O") && !l.m.startsWith("Tournoi: M") && !l.m.startsWith("Tournoi: D")).map(l => {
-                    let msg = l.m;
-                    if(msg == "B1") msg = `<span style="color:var(--jedi)">La Force est avec ${t1} ! BUT !</span>`;
-                    if(msg == "B2") msg = `<span style="color:var(--sith)">${t2} contre-attaque ! Le côté obscur marque.</span>`;
-                    if(msg == "G1") msg = `<span style="color:var(--jedi)">Incroyable tir de ${t1} ! La Force est puissante.</span>`;
-                    if(msg == "G2") msg = `<span style="color:var(--sith)">Une gamelle du côté obscur par ${t2} !</span>`;
-                    if(msg.includes("lance")) msg = `⚔️ Le duel commence : ${t1} vs ${t2}`;
-                    if(msg == "victoire_p1") msg = `🏆 VICTOIRE DE ${t1} ! La Galaxie est sauvée.`;
-                    if(msg == "victoire_p2") msg = `🏆 VICTOIRE DE ${t2} ! Le côté obscur triomphe.`;
-                    return `<div class="log-entry">${msg}</div>`;
-                }).join('');
             });
             fetch('/api/get_tournament').then(r => r.json()).then(data => {
                 tournament = data;

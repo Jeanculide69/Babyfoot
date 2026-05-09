@@ -1,4 +1,4 @@
-# ⚽ Babyfoot Force - Star Wars V1.0 🌌
+# ⚽ Babyfoot Force - Star Wars V2.0 🌌
 
 Bienvenue dans le dépôt du contrôleur de Babyfoot Star Wars. Ce projet transforme un babyfoot classique en une console de tournoi immersive avec effets visuels et sonores basés sur l'univers de Star Wars.
 
@@ -9,6 +9,7 @@ Bienvenue dans le dépôt du contrôleur de Babyfoot Star Wars. Ce projet transf
 - **WiFi Manager & Portail Captif** : Configuration facile du WiFi via une interface web mobile.
 - **TV Live Dashboard** : Page web dédiée pour afficher les scores et le tableau du tournoi sur un grand écran.
 - **Mises à jour OTA** : Possibilité de téléverser des fichiers `.bin` directement via l'interface web.
+- **Gestionnaire de Fichiers** : Interface web dédiée (`/files`) pour uploader (Drag & Drop), lister et supprimer les animations GIF sur le LittleFS.
 - **Ambilight** : Bandeaux LED NeoPixel synchronisés avec l'action.
 - **Audio immersif** : Bruitages de sabre laser, ambiance de stade et voix via DFPlayer Mini.
 
@@ -41,17 +42,18 @@ Bienvenue dans le dépôt du contrôleur de Babyfoot Star Wars. Ce projet transf
   - `ESP32-HUB75-MatrixPanel-I2S-DMA` (Gestion Matrix)
   - `Adafruit_NeoPixel` (Gestion LEDs Ambilight)
   - `ArduinoJson` (v6.x - Gestion des tournois)
+  - `AnimatedGIF` (Décodage et lecture des animations GIF)
   - `WiFi`, `WebServer`, `LittleFS`, `DNSServer`, `HTTPUpdateServer` (Core ESP32)
 
 ## ⚙️ Installation & Compilation
-1. **Partitionnement** : Dans l'IDE Arduino, sélectionnez `Partition Scheme: "Minimal SPIFFS (1.9MB APP with OTA)"`.
-2. **Système de fichiers** : Téléversez le contenu du dossier `data/` (si présent) via l'outil LittleFS Data Upload.
+1. **Partitionnement** : Dans l'IDE Arduino, sélectionnez **`Partition Scheme: "Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)"`**. C'est crucial pour avoir assez de place pour l'OTA et les GIFs.
+2. **Système de fichiers** : Utilisez le gestionnaire de fichiers intégré (`http://babyfoot.local/files`) pour envoyer vos GIFs. Formatez la mémoire via ce gestionnaire lors de la première installation.
 3. **Identifiants WiFi** : Par défaut, le système tente de se connecter à la Livebox configurée. En cas d'échec, connectez-vous au réseau `Babyfoot-Force-StarWars` (IP: `192.168.4.1`) pour configurer votre propre réseau.
 
 ## 📜 Crédits & Version
-- **Version** : 1.0 (Star Wars Edition)
+- **Version** : 2.0 (Master Console - Star Wars Edition)
 - **Statut** : Stable
-- **Date** : 08/05/2026
+- **Date** : 09/05/2026
 
 ---
 *Que la Force soit avec votre Babyfoot !*

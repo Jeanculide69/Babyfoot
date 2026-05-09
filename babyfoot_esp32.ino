@@ -11,7 +11,8 @@
 // --- VARIABLES TOURNOI & WEB (DYNAMIQUE) ---
 String team1_name = "JEDI";
 String team2_name = "SITH";
-bool tournament_mode = false;
+bool tournament_mode = false; // Mode classique par défaut au démarrage (affiche la veille)
+File fsUploadFile;
 
 // --- CONFIG WIFI (PAR DEFAUT) ---
 String wifi_ssid = "Livebox-6E60";
@@ -327,6 +328,62 @@ void setup() {
     server.send_P(200, "text/html", LOGS_HTML);
   });
 
+  server.on("/files", HTTP_GET, []() {
+    server.send_P(200, "text/html", FILES_HTML);
+  });
+
+  server.on("/api/list_files", HTTP_GET, []() {
+    String output = "[";
+    File root = LittleFS.open("/", "r");
+    if (!root) { server.send(500, "text/plain", "Error opening root"); return; }
+    File file = root.openNextFile();
+    while(file){
+        if (output != "[") output += ",";
+        output += "{\"n\":\"" + String(file.name()) + "\",\"s\":" + String(file.size()) + "}";
+        file = root.openNextFile();
+    }
+    output += "]";
+    server.send(200, "application/json", output);
+  });
+
+  server.on("/api/format_fs", HTTP_GET, []() {
+    LittleFS.format();
+    server.send(200, "text/plain", "LittleFS formatté avec succès. Redémarrez l'ESP32.");
+  });
+
+  server.on("/api/delete_file", HTTP_POST, []() {
+    if (server.hasArg("filename")) {
+      String filename = server.arg("filename");
+      if (!filename.startsWith("/")) filename = "/" + filename;
+      if (LittleFS.remove(filename)) {
+        server.send(200, "text/plain", "Fichier supprime");
+      } else {
+        server.send(500, "text/plain", "Erreur de suppression");
+      }
+    } else {
+      server.send(400, "text/plain", "Nom de fichier manquant");
+    }
+  });
+
+  server.on("/api/upload_gif", HTTP_POST, []() {
+    server.send(200, "text/plain", "Upload complet");
+  }, []() {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      String filename = upload.filename;
+      if (!filename.startsWith("/")) filename = "/" + filename;
+      Serial.printf("Reception du GIF: %s\n", filename.c_str());
+      fsUploadFile = LittleFS.open(filename, "w");
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (fsUploadFile) fsUploadFile.write(upload.buf, upload.currentSize);
+    } else if (upload.status == UPLOAD_FILE_END) {
+      if (fsUploadFile) {
+          fsUploadFile.close();
+          Serial.println("Upload réussi !");
+      }
+    }
+  });
+
   server.on("/api/logs", HTTP_GET, []() {
     StaticJsonDocument<2048> doc;
     JsonArray logs = doc.createNestedArray("logs");
@@ -600,7 +657,9 @@ void setup() {
 
   Serial1.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN);
   delay(500);
-  Serial.println("\n\n[SYS] --- BABYFOOT MASTER CONSOLE V1.0 (TOURNAMENT) ---");
+  Serial.print("\n\n[SYS] --- BABYFOOT MASTER CONSOLE ");
+  Serial.print(VERSION_STR);
+  Serial.println(" (TOURNAMENT) ---");
   
   // Initialisation volume
   target_vol = 25;

@@ -529,19 +529,22 @@ void handleAction(String act) {
   if (act == "G1") sim_g1 = true;
   if (act == "G2") sim_g2 = true;
   if (act == "OK") sim_ok = true;
-  if (act == "P1") score_p1++;
-  if (act == "M1") score_p1--; 
-  if (act == "P2") score_p2++;
-  if (act == "M2") score_p2--; 
+  if (act == "REBOOT") { ESP.restart(); }
+  if (act == "M1") { score_p1--; last_points = -1; bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2); }
+  if (act == "P1") { score_p1++; last_points = 1; bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2); }
+  if (act == "M2") { score_p2--; last_points = -1; bitClear(statut_game, LAST_GOAL_P1); bitSet(statut_game, LAST_GOAL_P2); }
+  if (act == "P2") { score_p2++; last_points = 1; bitClear(statut_game, LAST_GOAL_P1); bitSet(statut_game, LAST_GOAL_P2); }
   if (act == "DEMI") {
     if (bitRead(statut_game, LAST_GOAL_P1)) {
         score_p1 -= last_points; waiting_goal = last_points; 
         bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
-        addLog("PORTAIL: DEMI J1");
+        addLog("PORTAIL: DEMI J1"); addTvEvent("demi_j1");
+        requestAnimation(ANIM_DEMI); playSFX(9, false);
     } else if (bitRead(statut_game, LAST_GOAL_P2)) {
         score_p2 -= last_points; waiting_goal = last_points; 
         bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
-        addLog("PORTAIL: DEMI J2");
+        addLog("PORTAIL: DEMI J2"); addTvEvent("demi_j2");
+        requestAnimation(ANIM_DEMI); playSFX(9, false);
     }
   }
   if (act == "BIERE") { playSFX(SFX_GAMELLE, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
@@ -623,10 +626,10 @@ void read_inputs_old() {
 
 void raz_but(){
     int max_attempts = 5;
-    while((!digitalRead(GOAL_RIGHT) || !digitalRead(GOAL_LEFT) || !digitalRead(GAMELLE_RIGHT) || !digitalRead(GAMELLE_LEFT)) && max_attempts > 0){
+    while((digitalRead(GOAL_RIGHT) || digitalRead(GOAL_LEFT) || digitalRead(GAMELLE_RIGHT) || digitalRead(GAMELLE_LEFT)) && max_attempts > 0){
         digitalWrite(RESET_PIN, 0);
         unsigned long over_time = 0;
-        while((!digitalRead(GOAL_RIGHT) || !digitalRead(GOAL_LEFT) || !digitalRead(GAMELLE_RIGHT) || !digitalRead(GAMELLE_LEFT))) {
+        while((digitalRead(GOAL_RIGHT) || digitalRead(GOAL_LEFT) || digitalRead(GAMELLE_RIGHT) || digitalRead(GAMELLE_LEFT))) {
            over_time++;
            if (over_time > 100000) break; // Timeout rapide pour ne pas ralentir le jeu
         }
@@ -643,11 +646,11 @@ void raz_but(){
 }
 
 void handleGameLogic() {
+  read_inputs_old();
+
   static unsigned long lastLoop = 0;
   if (millis() - lastLoop < 30) return; // Limite à ~33 FPS pour plus de réactivité
   lastLoop = millis();
-
-  read_inputs_old();
 
   if (bitRead(statut_game, MATCH_FINISHED)) {
     static unsigned long stateTime = 0;
@@ -822,12 +825,14 @@ void handleGameLogic() {
             score_p1 -= last_points; 
             waiting_goal = last_points; 
             bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
-            addLog("DEMI J1: Point mis en attente.");
+            addLog("DEMI J1: Point mis en attente."); addTvEvent("demi_j1");
+            requestAnimation(ANIM_DEMI); playSFX(9, false);
         } else if (bitRead(statut_game, LAST_GOAL_P2)) {
             score_p2 -= last_points; 
             waiting_goal = last_points; 
             bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
-            addLog("DEMI J2: Point mis en attente.");
+            addLog("DEMI J2: Point mis en attente."); addTvEvent("demi_j2");
+            requestAnimation(ANIM_DEMI); playSFX(9, false);
         }
     }
 
