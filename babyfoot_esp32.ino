@@ -7,6 +7,8 @@
 #include <Update.h>
 #include "config.h"
 #include "web_pages.h"
+#include <WebSocketsServer.h>
+
 
 // --- VARIABLES TOURNOI & WEB (DYNAMIQUE) ---
 String team1_name = "JEDI";
@@ -61,13 +63,22 @@ void addLog(String m) {
   Serial.println("[LOG] " + m);
 }
 
-// --- EVENEMENTS TV (Spectacle) ---
+// --- EVENEMENTS TV (Spectacle via WebSocket) ---
+WebSocketsServer webSocket(81);
 String tv_events[10];
 int tv_idx = 0;
 void addTvEvent(String m) {
   tv_events[tv_idx % 10] = m;
   tv_idx++;
+  
+  // Diffusion immédiate via WebSocket
+  StaticJsonDocument<128> doc;
+  doc["m"] = m;
+  String out;
+  serializeJson(doc, out);
+  webSocket.broadcastTXT(out);
 }
+
 
 // --- MOTEUR DE TOURNOI C++ (Backend-Driven) ---
 void updateTournamentProgress(int s1, int s2) {
@@ -218,6 +229,8 @@ bool autoLoadNextMatch() {
 volatile int score_p1 = 0, score_p2 = 0, ball = 11;
 volatile uint32_t statut_game = 0;
 volatile unsigned int inputs = 0;
+extern volatile int waiting_goal; // Variable definie dans game_logic.ino
+
 
 MatrixPanel_I2S_DMA *matrix = nullptr;
 
@@ -421,12 +434,15 @@ void setup() {
     doc["ball"] = ball;
     doc["t1"] = team1_name;
     doc["t2"] = team2_name;
+    doc["waiting"] = waiting_goal;
+    doc["demi"] = bitRead(statut_game, DEMI);
     doc["mode"] = tournament_mode ? "tournament" : "classic";
     doc["run"] = bitRead(statut_game, RUN);
     doc["finished"] = bitRead(statut_game, MATCH_FINISHED);
     String out; serializeJson(doc, out);
     server.send(200, "application/json", out);
   });
+
 
   server.on("/api/reset_tournament", []() {
     resetTournament();
@@ -588,17 +604,27 @@ void setup() {
   });
 
   server.on("/api/wifi_scan", HTTP_GET, []() {
-    int n = WiFi.scanNetworks();
-    StaticJsonDocument<2048> doc;
-    JsonArray root = doc.to<JsonArray>();
-    for (int i = 0; i < n; ++i) {
-      JsonObject item = root.createNestedObject();
-      item["ssid"] = WiFi.SSID(i);
-      item["rssi"] = WiFi.RSSI(i);
+    int n = WiFi.scanComplete();
+    if (n == -1) { // Scan en cours
+      server.send(202, "application/json", "[]");
+    } else if (n == -2) { // Scan non lancé
+      WiFi.scanNetworks(true); // Lancer en asynchrone
+      server.send(202, "application/json", "[]");
+    } else {
+      StaticJsonDocument<2048> doc;
+      JsonArray root = doc.to<JsonArray>();
+      for (int i = 0; i < n; ++i) {
+        JsonObject item = root.createNestedObject();
+        item["ssid"] = WiFi.SSID(i);
+        item["rssi"] = WiFi.RSSI(i);
+      }
+      WiFi.scanDelete(); // Libérer la mémoire du scan
+      WiFi.scanNetworks(true); // Relancer pour le prochain appel
+      String out; serializeJson(doc, out);
+      server.send(200, "application/json", out);
     }
-    String out; serializeJson(doc, out);
-    server.send(200, "application/json", out);
   });
+
 
   server.on("/api/save_wifi", HTTP_GET, []() {
     String s = server.arg("ssid");
@@ -648,6 +674,15 @@ void setup() {
   const char* headerkeys[] = {"Content-Length"};
   server.collectHeaders(headerkeys, 1);
   server.begin();
+
+  // --- INITIALISATION WEBSOCKET ---
+  webSocket.begin();
+  webSocket.onEvent([](uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    if(type == WStype_CONNECTED) {
+       Serial.printf("[WS] Client %u connecte\n", num);
+    }
+  });
+
 
   // IMPULSION RESET HARDWARE (Obligatoire pour débloquer les capteurs)
   pinMode(25, OUTPUT);
@@ -707,14 +742,21 @@ void setup() {
   xTaskCreatePinnedToCore(webTask, "WebTask", 8192, NULL, 1, NULL, 0);
 }
 
-// Tâche dédiée au serveur Web sur le Core 0
+// Tâche dédiée au serveur Web et WebSocket sur le Core 0
 void webTask(void *pvParameters) {
   while (true) {
-    if (is_ap_mode) dnsServer.processNextRequest();
+    if (is_ap_mode) {
+      for(int i=0; i<5; i++) { // Traiter le DNS plus agressivement en mode AP
+        dnsServer.processNextRequest();
+      }
+    }
     server.handleClient();
-    vTaskDelay(pdMS_TO_TICKS(10)); // Utilise le delai FreeRTOS natif pour liberer le CPU
+    webSocket.loop();
+    vTaskDelay(pdMS_TO_TICKS(10)); // 10ms est un bon compromis pour laisser le WiFi stack respirer
   }
 }
+
+
 
 void loop() {
   extern void handleGameLogic();

@@ -552,22 +552,7 @@ void handleAction(String act) {
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
-void read_inputs_old() {
-  // --- COMMANDES DE SIMULATION SERIE ---
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    if (cmd == "B1") { sim_b1 = true; Serial.println("[SIM] BUT J1 Command"); }
-    if (cmd == "G1") { sim_g1 = true; Serial.println("[SIM] GAM J1 Command"); }
-    if (cmd == "B2") { sim_b2 = true; Serial.println("[SIM] BUT J2 Command"); }
-    if (cmd == "G2") { sim_g2 = true; Serial.println("[SIM] GAM J2 Command"); }
-    if (cmd == "OK") { sim_ok = true; Serial.println("[SIM] OK Command"); }
-  }
-
-  bool ok_raw = check_touch(BTN_OK, ok_buttom_start, bitRead(inputs, 0)) || sim_ok;
-  bool less_raw = check_touch(BTN_LESS, less_buttom_start, bitRead(inputs, 1));
-  bool more_raw = check_touch(BTN_MORE, more_buttom_start, bitRead(inputs, 2));
-
+void pollGoalSensors() {
   static bool last_phys_gr = false, last_phys_gl = false, last_phys_gamr = false, last_phys_gaml = false;
   
   bool phys_gr = digitalRead(GOAL_RIGHT);
@@ -587,26 +572,8 @@ void read_inputs_old() {
   bool gam_r = edge_gamr || sim_g2;
   bool gam_l = edge_gaml || sim_g1;
 
-  // Logs de debug pour le test des capteurs
-  static bool log_gr = false, log_gl = false, log_gamr = false, log_gaml = false;
-  if (phys_gr != log_gr) { log_gr = phys_gr; Serial.println("[DEBUG CAPTEUR] GOAL_RIGHT (Pin 36) -> " + String(phys_gr)); }
-  if (phys_gl != log_gl) { log_gl = phys_gl; Serial.println("[DEBUG CAPTEUR] GOAL_LEFT (Pin 34) -> " + String(phys_gl)); }
-  if (phys_gamr != log_gamr) { log_gamr = phys_gamr; Serial.println("[DEBUG CAPTEUR] GAMELLE_RIGHT (Pin 39) -> " + String(phys_gamr)); }
-  if (phys_gaml != log_gaml) { log_gaml = phys_gaml; Serial.println("[DEBUG CAPTEUR] GAMELLE_LEFT (Pin 35) -> " + String(phys_gaml)); }
-
-  // Reset des flags de simulation
-  sim_ok = sim_b1 = sim_g1 = sim_b2 = sim_g2 = false;
-
-  auto update_edge = [](int bit, bool current) {
-    if (current) { 
-      if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
-    }
-    else { bitClear(inputs, bit); }
-  };
-
-  update_edge(0, ok_raw); 
-  update_edge(1, less_raw); 
-  update_edge(2, more_raw);
+  // Reset des flags de simulation pour les buts
+  sim_b1 = sim_g1 = sim_b2 = sim_g2 = false;
 
   auto update_sensor = [](int bit, bool triggered) {
     if (triggered) { 
@@ -621,6 +588,38 @@ void read_inputs_old() {
   update_sensor(5, g_r);
   update_sensor(6, gam_r);
 }
+
+void pollButtons() {
+  // --- COMMANDES DE SIMULATION SERIE ---
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "B1") { sim_b1 = true; Serial.println("[SIM] BUT J1 Command"); }
+    if (cmd == "G1") { sim_g1 = true; Serial.println("[SIM] GAM J1 Command"); }
+    if (cmd == "B2") { sim_b2 = true; Serial.println("[SIM] BUT J2 Command"); }
+    if (cmd == "G2") { sim_g2 = true; Serial.println("[SIM] GAM J2 Command"); }
+    if (cmd == "OK") { sim_ok = true; Serial.println("[SIM] OK Command"); }
+  }
+
+  // Lecture des boutons capacitifs
+  bool ok_raw = check_touch(BTN_OK, ok_buttom_start, bitRead(inputs, 0)) || sim_ok;
+  bool less_raw = check_touch(BTN_LESS, less_buttom_start, bitRead(inputs, 1));
+  bool more_raw = check_touch(BTN_MORE, more_buttom_start, bitRead(inputs, 2));
+
+  sim_ok = false;
+
+  auto update_edge = [](int bit, bool current) {
+    if (current) { 
+      if (!bitRead(inputs, bit)) { bitSet(inputs, bit); bitSet(inputs, bit + 8); } 
+    }
+    else { bitClear(inputs, bit); }
+  };
+
+  update_edge(0, ok_raw); 
+  update_edge(1, less_raw); 
+  update_edge(2, more_raw);
+}
+
 
 void raz_but(){
     int max_attempts = 5;
@@ -644,11 +643,17 @@ void raz_but(){
 }
 
 void handleGameLogic() {
-  read_inputs_old();
+  // 1. Lecture haute fréquence des capteurs (Appelé à chaque loop ~1ms)
+  pollGoalSensors();
 
+  // 2. Throttle à 30ms pour la logique de jeu et les boutons
   static unsigned long lastLoop = 0;
-  if (millis() - lastLoop < 30) return; // Limite à ~33 FPS pour plus de réactivité
+  if (millis() - lastLoop < 30) return; 
   lastLoop = millis();
+
+  // 3. Lecture "calme" des boutons (Seulement toutes les 30ms)
+  pollButtons();
+
 
   if (bitRead(statut_game, MATCH_FINISHED)) {
     static unsigned long stateTime = 0;

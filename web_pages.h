@@ -345,8 +345,13 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
         .team-box { text-align: center; width: 40%; }
         .team-name { font-size: 3vw; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .score-val { font-size: 12vw; font-weight: 900; line-height: 1; text-shadow: 0 0 30px currentColor; border: 6px solid currentColor; padding: 10px 30px; border-radius: 20px; display: inline-block; min-width: 15vw; }
+        .demi-zone { margin-top: 10px; height: 30px; }
+        .demi-label { color: var(--gold); font-size: 1.2vw; font-weight: bold; text-transform: uppercase; letter-spacing: 3px; animation: blink 1s infinite; display: none; text-shadow: 0 0 10px var(--gold); }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+
         .ball-count { text-align: center; color: var(--gold); }
         .ball-val { font-size: 5vw; font-weight: bold; }
+
         .bottom-grid { flex: 1; display: grid; grid-template-columns: 400px 1fr; gap: 20px; overflow: hidden; margin-top: 20px; }
         .logs-panel { background: var(--glass); border: 1px solid #444; border-radius: 15px; padding: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         @keyframes flash {
@@ -366,6 +371,18 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
         .overlay h1 { font-size: 5vw; color: var(--gold); text-shadow: 0 0 20px var(--gold); margin: 0; }
         .overlay .winner-name { font-size: 8vw; color: white; margin: 20px 0; text-transform: uppercase; }
         .overlay .quote { font-size: 2vw; color: #888; font-style: italic; }
+        
+        /* Nouveaux styles pour les alertes Flash */
+        .flash-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; display: none; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+        .flash-content { transform: scale(0.5); opacity: 0; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .flash-active .flash-content { transform: scale(1.2); opacity: 1; }
+        .flash-title { font-size: 10vw; font-weight: 900; text-transform: uppercase; letter-spacing: 10px; margin: 0; }
+        .flash-subtitle { font-size: 3vw; color: white; text-transform: uppercase; letter-spacing: 5px; }
+        
+        .goal-blue { background: radial-gradient(circle, rgba(0,242,255,0.4) 0%, rgba(0,0,0,0.9) 80%); }
+        .goal-red { background: radial-gradient(circle, rgba(255,0,0,0.4) 0%, rgba(0,0,0,0.9) 80%); }
+        .goal-gold { background: radial-gradient(circle, rgba(255,224,0,0.4) 0%, rgba(0,0,0,0.9) 80%); }
+
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
 </head>
@@ -381,14 +398,22 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
     </div>
     <div class="scoreboard">
         <div class="team-box" style="color:var(--jedi)"><div class="team-name" id="t1_name">JEDI</div><div class="score-val" id="s1">0</div></div>
-        <div class="ball-count"><div style="font-size: 1vw; letter-spacing: 3px;">BALLES</div><div class="ball-val" id="ball">11</div></div>
+        <div class="ball-count">
+            <div style="font-size: 1vw; letter-spacing: 3px;">BALLES</div>
+            <div class="ball-val" id="ball">11</div>
+            <div class="demi-zone"><div id="demi-global" class="demi-label">⚠ POINT EN ATTENTE</div></div>
+        </div>
         <div class="team-box" style="color:var(--sith)"><div class="team-name" id="t2_name">SITH</div><div class="score-val" id="s2">0</div></div>
     </div>
+
+
     <div class="bottom-grid">
         <div class="logs-panel"><div style="color:var(--gold); font-size:1vw; margin-bottom:10px; font-weight:bold;">EVENEMENTS RECENTS</div><div id="log-box" style="overflow-y:auto; flex:1;"></div></div>
         <div class="bracket-panel"><div style="color:var(--gold); font-size:1vw; margin-bottom:10px; font-weight:bold;">TABLEAU DU TOURNOI</div><div class="bracket-scroll" id="bracket-box"></div></div>
     </div>
     <div id="overlay" class="overlay"></div>
+    <div id="flash" class="flash-overlay"><div class="flash-content"><h2 class="flash-title" id="flash-title">BUT !</h2><p class="flash-subtitle" id="flash-sub">LA FORCE EST AVEC VOUS</p></div></div>
+    
     <div style="position:fixed; bottom:20px; right:20px; z-index:1000;">
         <button onclick="fetch('/action?id=OK')" style="background:var(--gold); color:black; font-weight:bold; padding:15px 30px; border:none; border-radius:10px; cursor:pointer; font-size:1.5vw; box-shadow: 0 0 20px rgba(0,0,0,0.5);">BOUTON OK</button>
     </div>
@@ -397,64 +422,90 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
         let startTime = Date.now();
         let isRunning = false;
 
-        let ws = new WebSocket('ws://' + location.hostname + ':81/');
-        ws.onmessage = function(event) {
-            let data = JSON.parse(event.data);
-            const t1 = document.getElementById('t1_name').innerText;
-            const t2 = document.getElementById('t2_name').innerText;
-            let msg = data.m;
+        function showFlash(type, title, sub) {
+            const f = document.getElementById('flash');
+            const ft = document.getElementById('flash-title');
+            const fs = document.getElementById('flash-sub');
             
-            const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
+            f.className = 'flash-overlay ' + type;
+            ft.innerText = title;
+            fs.innerText = sub;
+            ft.style.color = (type == 'goal-blue') ? 'var(--jedi)' : (type == 'goal-red' ? 'var(--sith)' : 'var(--gold)');
+            ft.style.textShadow = '0 0 50px ' + ft.style.color;
+            
+            f.style.display = 'flex';
+            setTimeout(() => f.classList.add('flash-active'), 50);
+            setTimeout(() => {
+                f.classList.remove('flash-active');
+                setTimeout(() => f.style.display = 'none', 300);
+            }, 3000);
+        }
 
-            if(msg == "B1") {
-                const phrases = [
-                    `🔵 [BUT JEDI] La Force est avec ${t1} !`,
-                    `🔵 [BUT JEDI] Tir de précision d'un X-Wing !`,
-                    `🔵 [BUT JEDI] ${t1} transperce la défense Sith !`,
-                    `🔵 [BUT JEDI] Un coup de sabre laser fatal !`
-                ];
-                msg = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
-            }
-            if(msg == "B2") {
-                const phrases = [
-                    `🔴 [BUT SITH] ${t2} contre-attaque avec fureur !`,
-                    `🔴 [BUT SITH] Le côté obscur marque un point !`,
-                    `🔴 [BUT SITH] La vengeance des Sith est en marche !`,
-                    `🔴 [BUT SITH] Vador est fier de ce tir !`
-                ];
-                msg = `<span style="color:var(--sith)">${random(phrases)}</span>`;
-            }
-            if(msg == "G1") {
-                const phrases = [
-                    `💎 [GAMELLE] Explosion de l'Étoile Noire par ${t1} !`,
-                    `💎 [GAMELLE] Maître Yoda valide ce tir légendaire !`,
-                    `💎 [GAMELLE] La Force est surpuissante chez ${t1} !`
-                ];
-                msg = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
-            }
-            if(msg == "G2") {
-                const phrases = [
-                    `🔥 [GAMELLE] L'Empereur jubile ! Frappe de ${t2} !`,
-                    `🔥 [GAMELLE] Une perturbation majeure par ${t2} !`,
-                    `🔥 [GAMELLE] Le côté obscur triomphe sur ce coup !`
-                ];
-                msg = `<span style="color:var(--sith)">${random(phrases)}</span>`;
-            }
-            if(msg == "demi_j1" || msg == "demi_j2") {
-                const phrases = [
-                    `✨ [DEMI] Une perturbation dans la Force... Point annulé !`,
-                    `✨ [DEMI] Saut dans l'hyper-espace ! On revient en arrière.`,
-                    `✨ [DEMI] Manipulation mentale... Le point disparaît !`
-                ];
-                msg = `<span style="color:var(--gold)">${random(phrases)}</span>`;
-            }
-            if(msg.includes("lance")) msg = `⚔️ <b>LE DUEL COMMENCE</b> : ${t1} vs ${t2}`;
-            if(msg == "victoire_p1") msg = `🏆 VICTOIRE DE ${t1} ! La Galaxie est sauvée.`;
-            if(msg == "victoire_p2") msg = `🏆 VICTOIRE DE ${t2} ! Le côté obscur triomphe.`;
-            
-            let logBox = document.getElementById('log-box');
-            logBox.innerHTML = `<div class="log-entry">${msg}</div>` + logBox.innerHTML;
-        };
+        function connectWS() {
+            let ws = new WebSocket('ws://' + location.hostname + ':81/');
+            ws.onmessage = function(event) {
+                let data = JSON.parse(event.data);
+                const t1 = document.getElementById('t1_name').innerText;
+                const t2 = document.getElementById('t2_name').innerText;
+                let raw_m = data.m;
+                let display_m = "";
+                
+                const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+                if(raw_m == "B1") {
+                    showFlash('goal-blue', 'BUT !', t1 + ' MARQUE');
+                    display_m = `<span style="color:var(--jedi)">🔵 [BUT] ${t1} transperce la défense !</span>`;
+                }
+                else if(raw_m == "B2") {
+                    showFlash('goal-red', 'BUT !', t2 + ' MARQUE');
+                    display_m = `<span style="color:var(--sith)">🔴 [BUT] ${t2} contre-attaque avec fureur !</span>`;
+                }
+                else if(raw_m == "G1") {
+                    showFlash('goal-blue', 'GAMELLE !', t1 + ' EST SURPUISSANT');
+                    display_m = `<span style="color:var(--jedi)">💎 [GAMELLE] ${t1} pulvérise le score !</span>`;
+                }
+                else if(raw_m == "G2") {
+                    showFlash('goal-red', 'GAMELLE !', t2 + ' EST SURPUISSANT');
+                    display_m = `<span style="color:var(--sith)">🔥 [GAMELLE] ${t2} ne laisse aucune chance !</span>`;
+                }
+                else if(raw_m == "demi_j1" || raw_m == "demi_j2") {
+                    showFlash('goal-gold', 'DEMI !', 'PERTURBATION DANS LA FORCE');
+                    display_m = `<span style="color:var(--gold)">✨ [DEMI] On remonte le temps...</span>`;
+                }
+                else if(raw_m.includes("lance")) display_m = `⚔️ <b>LE DUEL COMMENCE</b> : ${t1} vs ${t2}`;
+                else if(raw_m == "victoire_p1") display_m = `🏆 VICTOIRE DE ${t1} !`;
+                else if(raw_m == "victoire_p2") display_m = `🏆 VICTOIRE DE ${t2} !`;
+                else display_m = raw_m;
+                
+                if (display_m) {
+                    let logBox = document.getElementById('log-box');
+                    logBox.innerHTML = `<div class="log-entry">${display_m}</div>` + logBox.innerHTML;
+                }
+            };
+            ws.onclose = () => setTimeout(connectWS, 2000);
+        }
+        connectWS();
+
+        function loadLogs() {
+            fetch('/api/tv_events').then(r => r.json()).then(data => {
+                if(data.logs) {
+                    let html = '';
+                    data.logs.forEach(l => {
+                        let m = l.m;
+                        if(m == "B1") m = "🔵 BUT JEDI";
+                        if(m == "B2") m = "🔴 BUT SITH";
+                        if(m == "G1") m = "💎 GAMELLE JEDI";
+                        if(m == "G2") m = "🔥 GAMELLE SITH";
+                        if(m == "demi_j1" || m == "demi_j2") m = "✨ DEMI";
+                        html += `<div class="log-entry">${m}</div>`;
+                    });
+                    document.getElementById('log-box').innerHTML = html;
+                }
+            });
+        }
+        loadLogs();
+
+
 
         function update() {
             fetch('/api/status').then(r => r.json()).then(data => {
@@ -464,7 +515,12 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                 document.getElementById('t1_name').innerText = data.t1;
                 document.getElementById('t2_name').innerText = data.t2;
                 
+                // Gestion de l'indicateur DEMI global
+                document.getElementById('demi-global').style.display = (data.waiting > 0) ? 'block' : 'none';
+
                 let ov = document.getElementById('overlay');
+
+
                 let label = document.getElementById('match-label');
 
                 if(data.finished) {
