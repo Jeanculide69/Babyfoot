@@ -513,6 +513,9 @@ bool check_touch(int pin, volatile int &counter, bool current_state) {
   int val = touchRead(pin);
   if (val < SENS_SET && val > 1) { 
     if (counter < 100) counter++; 
+    if (counter == DELAY_BUTTOM + 1) { 
+      Serial.printf("[TOUCH] Trigger PIN %d | Val: %d | Limit: %d\n", pin, val, SENS_SET);
+    }
   }
   else if (counter > 0) { counter--; }
   
@@ -552,8 +555,10 @@ void handleAction(String act) {
   Serial.print("[WIFI-SIM] Command Received: "); Serial.println(act);
 }
 
+// --- ETATS PHYSIQUES DES CAPTEURS (Pour réarmement) ---
+bool last_phys_gr = false, last_phys_gl = false, last_phys_gamr = false, last_phys_gaml = false;
+
 void pollGoalSensors() {
-  static bool last_phys_gr = false, last_phys_gl = false, last_phys_gamr = false, last_phys_gaml = false;
   
   bool phys_gr = digitalRead(GOAL_RIGHT);
   bool phys_gl = digitalRead(GOAL_LEFT);
@@ -571,6 +576,11 @@ void pollGoalSensors() {
   bool g_l = edge_gl || sim_b1;
   bool gam_r = edge_gamr || sim_g2;
   bool gam_l = edge_gaml || sim_g1;
+
+  if (g_r) Serial.println("[SENSOR] BUT DROIT (P2)");
+  if (g_l) Serial.println("[SENSOR] BUT GAUCHE (P1)");
+  if (gam_r) Serial.println("[SENSOR] GAMELLE DROITE (P2)");
+  if (gam_l) Serial.println("[SENSOR] GAMELLE GAUCHE (P1)");
 
   // Reset des flags de simulation pour les buts
   sim_b1 = sim_g1 = sim_b2 = sim_g2 = false;
@@ -636,6 +646,13 @@ void raz_but(){
         max_attempts--;
     }
     
+    // V2.4 Fix: On capture l'état actuel au lieu de forcer à false.
+    // Cela évite de déclencher un but si la pin est déjà HIGH (déconnectée/flottante) au démarrage.
+    last_phys_gr = digitalRead(GOAL_RIGHT);
+    last_phys_gl = digitalRead(GOAL_LEFT);
+    last_phys_gamr = digitalRead(GAMELLE_RIGHT);
+    last_phys_gaml = digitalRead(GAMELLE_LEFT);
+
     // Si la balle reste bloquée devant le capteur physiquement
     if (max_attempts == 0) {
         Serial.println("[ATTENTION] Un capteur est toujours declenche (balle bloquee ?) -> on continue.");
@@ -761,6 +778,7 @@ void handleGameLogic() {
         if (bitRead(inputs, 8)) { bitClear(statut_game, SCORE_ADJUST); bitClear(statut_game, PLAYER_CONFIRMED); }
       }
       score_screen_starwars();
+      inputs &= 0x00FF; // V2.4 Fix: Toujours effacer les fronts avant de quitter
       return;
     }
 

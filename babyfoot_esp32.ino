@@ -413,33 +413,30 @@ void setup() {
   });
 
   server.on("/api/tv_events", HTTP_GET, []() {
-    StaticJsonDocument<1024> doc;
-    JsonArray logs = doc.createNestedArray("logs");
+    String out = "{\"logs\":[";
     for(int i=0; i<10; i++) {
       int idx = (tv_idx - 1 - i + 10) % 10;
-      if(tv_events[idx] != "") {
-        JsonObject entry = logs.createNestedObject();
-        entry["t"] = millis()/1000;
-        entry["m"] = tv_events[idx];
+      int id = tv_idx - 1 - i;
+      if(id >= 0 && tv_events[idx] != "") {
+        if (i > 0 && out != "{\"logs\":[") out += ",";
+        out += "{\"id\":" + String(id) + ",\"m\":\"" + tv_events[idx] + "\"}";
       }
     }
-    String out; serializeJson(doc, out);
+    out += "]}";
     server.send(200, "application/json", out);
   });
 
   server.on("/api/status", HTTP_GET, []() {
-    StaticJsonDocument<256> doc;
-    doc["p1"] = score_p1;
-    doc["p2"] = score_p2;
-    doc["ball"] = ball;
-    doc["t1"] = team1_name;
-    doc["t2"] = team2_name;
-    doc["waiting"] = waiting_goal;
-    doc["demi"] = bitRead(statut_game, DEMI);
-    doc["mode"] = tournament_mode ? "tournament" : "classic";
-    doc["run"] = bitRead(statut_game, RUN);
-    doc["finished"] = bitRead(statut_game, MATCH_FINISHED);
-    String out; serializeJson(doc, out);
+    String out = "{\"p1\":" + String(score_p1) + 
+                 ",\"p2\":" + String(score_p2) + 
+                 ",\"ball\":" + String(ball) + 
+                 ",\"t1\":\"" + team1_name + "\"" +
+                 ",\"t2\":\"" + team2_name + "\"" +
+                 ",\"waiting\":" + String(waiting_goal) + 
+                 ",\"demi\":" + String(bitRead(statut_game, DEMI) ? 1 : 0) + 
+                 ",\"mode\":\"" + String(tournament_mode ? "tournament" : "classic") + "\"" +
+                 ",\"run\":" + String(bitRead(statut_game, RUN) ? 1 : 0) + 
+                 ",\"finished\":" + String(bitRead(statut_game, MATCH_FINISHED) ? 1 : 0) + "}";
     server.send(200, "application/json", out);
   });
 
@@ -745,14 +742,10 @@ void setup() {
 // Tâche dédiée au serveur Web et WebSocket sur le Core 0
 void webTask(void *pvParameters) {
   while (true) {
-    if (is_ap_mode) {
-      for(int i=0; i<5; i++) { // Traiter le DNS plus agressivement en mode AP
-        dnsServer.processNextRequest();
-      }
-    }
-    server.handleClient();
+    if (is_ap_mode) dnsServer.processNextRequest();
     webSocket.loop();
-    vTaskDelay(pdMS_TO_TICKS(10)); // 10ms est un bon compromis pour laisser le WiFi stack respirer
+    server.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(10)); // Retour à 10ms (V2.0) pour laisser plus d'air au stack WiFi
   }
 }
 
@@ -763,5 +756,5 @@ void loop() {
   extern void updateLEDs();
   handleGameLogic();
   updateLEDs();
-  delay(1); // Libère du temps CPU pour le décodage GIF et le WiFi
+  yield(); // Plus réactif que delay(1)
 }

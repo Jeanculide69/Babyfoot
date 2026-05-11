@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define VERSION_STR "V2.0 - 08/05/2026"
+#define VERSION_STR "V2.4 - 11/05/2026"
 
 #include <Arduino.h>
 
@@ -41,8 +41,8 @@
 #define BTN_OK   27
 #define RESET_PIN 25
 
-#define DELAY_BUTTOM 5
-#define SENS_SET     700              // Set to active buttom (valeur environ 600 quand appuyé)
+#define DELAY_BUTTOM 33               // Filtrage pour 1 seconde (33 * 30ms)
+#define SENS_SET     400              // Sensibilité demandée (400)
 #define RUN              0
 #define START_GAME       5
 #define MATCH_FINISHED   6

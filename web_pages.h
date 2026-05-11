@@ -453,28 +453,55 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                 const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
                 if(raw_m == "B1") {
+                    const phrases = [
+                        `🔵 [BUT ${t1}] La Force est avec vous !`,
+                        `🔵 [BUT ${t1}] Tir de précision d'un X-Wing !`,
+                        `🔵 [BUT ${t1}] ${t1} transperce la défense adverse !`,
+                        `🔵 [BUT ${t1}] Un coup de sabre laser fatal !`
+                    ];
                     showFlash('goal-blue', 'BUT !', t1 + ' MARQUE');
-                    display_m = `<span style="color:var(--jedi)">🔵 [BUT] ${t1} transperce la défense !</span>`;
+                    display_m = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
                 }
                 else if(raw_m == "B2") {
+                    const phrases = [
+                        `🔴 [BUT ${t2}] ${t2} contre-attaque avec fureur !`,
+                        `🔴 [BUT ${t2}] Le côté obscur marque un point !`,
+                        `🔴 [BUT ${t2}] La vengeance de ${t2} est en marche !`,
+                        `🔴 [BUT ${t2}] Tir dévastateur !`
+                    ];
                     showFlash('goal-red', 'BUT !', t2 + ' MARQUE');
-                    display_m = `<span style="color:var(--sith)">🔴 [BUT] ${t2} contre-attaque avec fureur !</span>`;
+                    display_m = `<span style="color:var(--sith)">${random(phrases)}</span>`;
                 }
                 else if(raw_m == "G1") {
+                    const phrases = [
+                        `💎 [GAMELLE ${t1}] Explosion de l'Étoile Noire !`,
+                        `💎 [GAMELLE ${t1}] Maître Yoda valide ce tir légendaire !`,
+                        `💎 [GAMELLE ${t1}] La Force est surpuissante !`
+                    ];
                     showFlash('goal-blue', 'GAMELLE !', t1 + ' EST SURPUISSANT');
-                    display_m = `<span style="color:var(--jedi)">💎 [GAMELLE] ${t1} pulvérise le score !</span>`;
+                    display_m = `<span style="color:var(--jedi)">${random(phrases)}</span>`;
                 }
                 else if(raw_m == "G2") {
+                    const phrases = [
+                        `🔥 [GAMELLE ${t2}] L'Empereur jubile !`,
+                        `🔥 [GAMELLE ${t2}] Une perturbation majeure !`,
+                        `🔥 [GAMELLE ${t2}] Le côté obscur triomphe !`
+                    ];
                     showFlash('goal-red', 'GAMELLE !', t2 + ' EST SURPUISSANT');
-                    display_m = `<span style="color:var(--sith)">🔥 [GAMELLE] ${t2} ne laisse aucune chance !</span>`;
+                    display_m = `<span style="color:var(--sith)">${random(phrases)}</span>`;
                 }
                 else if(raw_m == "demi_j1" || raw_m == "demi_j2") {
+                    const phrases = [
+                        `✨ [DEMI] Une perturbation dans la Force... Point annulé !`,
+                        `✨ [DEMI] Saut dans l'hyper-espace ! On revient en arrière.`,
+                        `✨ [DEMI] Manipulation mentale... Le point disparaît !`
+                    ];
                     showFlash('goal-gold', 'DEMI !', 'PERTURBATION DANS LA FORCE');
-                    display_m = `<span style="color:var(--gold)">✨ [DEMI] On remonte le temps...</span>`;
+                    display_m = `<span style="color:var(--gold)">${random(phrases)}</span>`;
                 }
                 else if(raw_m.includes("lance")) display_m = `⚔️ <b>LE DUEL COMMENCE</b> : ${t1} vs ${t2}`;
-                else if(raw_m == "victoire_p1") display_m = `🏆 VICTOIRE DE ${t1} !`;
-                else if(raw_m == "victoire_p2") display_m = `🏆 VICTOIRE DE ${t2} !`;
+                else if(raw_m == "victoire_p1") display_m = `🏆 VICTOIRE DE ${t1} ! La Galaxie est sauvée.`;
+                else if(raw_m == "victoire_p2") display_m = `🏆 VICTOIRE DE ${t2} ! Le côté obscur triomphe.`;
                 else display_m = raw_m;
                 
                 if (display_m) {
@@ -546,6 +573,9 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                     document.getElementById('timer').innerText = m + ":" + s;
                 }
             });
+        }
+
+        function updateTournament() {
             fetch('/api/get_tournament').then(r => r.json()).then(data => {
                 tournament = data;
                 document.getElementById('bracket-box').innerHTML = data.rounds.map((round, rIdx) => `
@@ -569,7 +599,9 @@ const char TV_HTML[] PROGMEM = R"rawliteral(
                 body: JSON.stringify(tournament) 
             });
         }
-        setInterval(update, 3000); update();
+        setInterval(update, 3000); 
+        setInterval(updateTournament, 60000); // Mise à jour lente du tableau (60s)
+        update(); updateTournament();
     </script>
     <a href="/" style="position:fixed; bottom:10px; right:10px; color:rgba(255,255,255,0.2); text-decoration:none; font-size:10px;">CONSOLE</a>
 </body>
@@ -870,7 +902,7 @@ const char TOURNAMENT_HTML[] PROGMEM = R"rawliteral(
                 if(typeof syncResults === 'function') syncResults(data); 
             });
         }
-        setInterval(updateStatus, 3000); load();
+        setInterval(updateStatus, 5000); load(); // Polling réduit pour la console de gestion
     </script>
 </body>
 </html>

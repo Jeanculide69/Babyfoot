@@ -1,0 +1,20 @@
+================================================================================
+?? ATTENTION : DOSSIER VERROUILLÉ - VERSION V2.3 STABLE (RÉFÉRENCE)
+================================================================================
+
+Ce dossier contient le code source VALIDÉ et STABLE du firmware Babyfoot.
+Il a été restauré suite à l'audit du 11/05/2026.
+
+REGLES ABSOLUES :
+1. INTERDICTION FORMELLE DE MODIFIER LES FICHIERS DE CE DOSSIER.
+2. Ce dossier sert de point de restauration unique en cas de bug majeur.
+3. Toute expérimentation doit se faire UNIQUEMENT dans le dossier 'babyfoot new'.
+
+REGLAGES VERROUILLÉS :
+- Sensibilité Tactile (SENS_SET) : 400
+- Délai Anti-rebond (DELAY_BUTTOM) : 30
+- Portail Web : Mode Ultra-réactif (Zéro-JSON)
+
+Date de verrouillage : 11/05/2026
+Auteur : Antigravity (Assistant AI) - Sur ordre de l'utilisateur
+================================================================================
