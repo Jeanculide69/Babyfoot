@@ -8,16 +8,16 @@
 
 ## 🛠 SPÉCIFICATIONS TECHNIQUES
 - **Plateforme** : ESP32 DevKit V1
-- **Framework** : Arduino ESP32 Core **v2.0.2** (Stable)
+- **Framework** : Arduino ESP32 Core **v3.3.8** (Stable)
 - **Système de fichiers** : LittleFS (Partition 1.5MB SPIFFS avec OTA)
 - **Audio** : DFPlayer Mini (Serial1: 13/12)
 
 ## 📚 BIBLIOTHÈQUES UTILISÉES
-- **ESP32-HUB75-MatrixPanel-I2S-DMA** : Gestion de la dalle LED en DMA haute fréquence.
-- **Adafruit_NeoPixel** : Contrôle du bandeau Ambilight.
-- **ArduinoJson** : Traitement des données de tournoi (JSON).
-- **AnimatedGIF** : Lecture optimisée des fichiers GIF directement depuis la mémoire Flash (LittleFS).
-- **WiFi / WebServer / LittleFS** : Infrastructure réseau et stockage.
+- **ESP32-HUB75-MatrixPanel-DMA** (v3.0.15) : Gestion de la dalle LED en DMA.
+- **Adafruit_NeoPixel** (v1.15.4) : Contrôle du bandeau Ambilight.
+- **ArduinoJson** (v7.4.3) : Traitement des données de tournoi (JSON).
+- **AnimatedGIF** (v2.2.0) : Lecture optimisée des fichiers GIF.
+- **WiFi / WebServer / WebSockets** : Infrastructure réseau et communication live.
 
 ## 📡 RÉSEAU DE SECOURS
 - **SSID AP** : Babyfoot-Force-StarWars
