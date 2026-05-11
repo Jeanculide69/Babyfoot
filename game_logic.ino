@@ -701,12 +701,9 @@ void handleGameLogic() {
         portENTER_CRITICAL(&stateMutex);
         bitClear(statut_game, MATCH_FINISHED);
         
-        if (nextFound && tournament_mode) {
-            bitSet(statut_game, RUN); // Lancement AUTO
-            bitClear(statut_game, START_GAME);
-        } else {
-            bitSet(statut_game, START_GAME); // Retour STANDBY
-        }
+        // V2.5 Fix: On attend systématiquement l'appui sur OK pour le match suivant
+        bitSet(statut_game, START_GAME); // Retour STANDBY (Attente OK)
+        bitClear(statut_game, RUN);      // On ne lance jamais AUTO
         
         ball = 11; score_p1 = 0; score_p2 = 0;
         waiting_goal = 0;

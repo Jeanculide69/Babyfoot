@@ -1,5 +1,7 @@
-VERSION 2.4 STAR WARS - MASTER CONSOLE
-- Correction bug "scores fous" en mode réglage (Edge Reset)
-- Sensibilité 400 avec filtrage 1 seconde (V2.4 Standard)
-- Ajout logs diagnostics capteurs (Serial 115200)
-- Tournament Bracket persistant et stable
+VERSION 2.5 FINAL - STAR WARS MASTER CONSOLE (11/05/2026)
+- Correction transition match : Toujours attendre confirmation OK entre deux matchs
+- Affichage automatique de l'écran VS/Attente après la pause Bière
+- Synchronisation audio : Musique de match déclenchée par le bouton OK
+- Correction boucle GIF : Suppression du freeze d'une seconde en veille
+- Correction animations : Augmentation de la durée max pour l'animation DEMI (6s)
+- Stabilisation (V2.4) : Correction bug scores fous et sensibilité capteurs (400/1s)

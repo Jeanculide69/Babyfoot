@@ -86,14 +86,16 @@ void GIFDraw(GIFDRAW *pDraw) {
 // CONTROLEUR D'ANIMATION
 // ==========================================
 
-void startGIF(const char *fname, bool silent = false) {
+bool startGIF(const char *fname, bool silent = false) {
     if (gifFile) gifFile.close();
     if (gif.open(fname, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
         playingGif = true;
         nextFrameTime = millis();
+        return true;
     } else {
         if(!silent) Serial.printf("❌ Erreur : Impossible de lire %s\n", fname);
-        playingGif = false; // Explicite
+        playingGif = false;
+        return false;
     }
 }
 
@@ -117,12 +119,10 @@ void requestAnimation(int type) {
     case ANIM_GAM_J2: startGIF("/gamelle_rouge.gif"); break;
     case ANIM_BIERE:  startGIF("/pause_biere.gif"); break;
     case ANIM_VIC_J1: 
-      startGIF("/victoire_bleu.gif", true); 
-      if(!playingGif) startGIF("/Victoire Bleu.gif"); 
+      if(!startGIF("/victoire_bleu.gif", true)) startGIF("/Victoire Bleu.gif"); 
       break;
     case ANIM_VIC_J2: 
-      startGIF("/victoire_rouge.gif", true); 
-      if(!playingGif) startGIF("/Victoire Rouge.gif"); 
+      if(!startGIF("/victoire_rouge.gif", true)) startGIF("/Victoire Rouge.gif"); 
       break;
     case ANIM_BALLE_MATCH: startGIF("/balle_de_match_expert.gif"); break;
     case ANIM_DEMI: startGIF("/demi.gif"); break;
@@ -177,15 +177,16 @@ void updateFakeAmbilight() {
 // ==========================================
 void drawStarWarsGIF() {
   if (!matrix) return;
-  // Mode Veille -> on joue veille.gif en boucle
-  if (!playingGif) {
-      static unsigned long lastVeilleTry = 0;
-      static bool firstVeille = true;
-      if (firstVeille || millis() - lastVeilleTry > 5000) { // On ne réessaie que toutes les 5s si ça échoue (sauf la 1ere fois)
-          lastVeilleTry = millis();
-          firstVeille = false;
-          startGIF("/veille.gif", true); // Essayer en minuscule d'abord
-          if(!playingGif) startGIF("/Veille.gif"); // Fallback
+  
+  // Mode Veille -> on joue veille.gif en boucle si aucune animation n'est active
+  if (!playingGif && active_anim == ANIM_NONE) {
+      static unsigned long lastErrorTime = 0;
+      if (millis() - lastErrorTime > 5000) { // Guard for file errors
+          if (startGIF("/veille.gif", true) || startGIF("/Veille.gif", true)) {
+              lastErrorTime = 0; // Reset error guard on success
+          } else {
+              lastErrorTime = millis(); // Set error guard on failure
+          }
       }
   }
   
@@ -194,15 +195,19 @@ void drawStarWarsGIF() {
       if (gif.playFrame(false, &delayMs)) {
           nextFrameTime = millis() + delayMs;
       } else {
-          // Boucle sur veille : On ferme proprement et on relancera au prochain cycle avec le délai
+          // Fin du GIF : On ferme proprement
           gif.close();
           playingGif = false;
+          // Si on est en veille, le prochain appel à drawStarWarsGIF() relancera le GIF au prochain loop()
       }
-      // Veille Ambilight : Respiration lente
-      int br = 50 + 50 * sin(millis() / 1000.0);
-      color_neo(strip1.Color(br, br, br));
-      strip1.show();
-      strip2.show();
+
+      // Effet Ambilight de veille (seulement si pas d'animation active)
+      if (active_anim == ANIM_NONE) {
+          int br = 40 + 40 * sin(millis() / 800.0);
+          color_neo(strip1.Color(br, br, br));
+          strip1.show();
+          strip2.show();
+      }
   }
 }
 
@@ -216,6 +221,7 @@ void updateAnimations() {
   if (active_anim == ANIM_VIC_J1 || active_anim == ANIM_VIC_J2) maxDuration = 5000;
   if (active_anim == ANIM_BIERE) maxDuration = 15000;
   if (active_anim == ANIM_BALLE_MATCH) maxDuration = 7000;
+  if (active_anim == ANIM_DEMI) maxDuration = 6000;
 
   bool forceStop = (millis() - start_anim_ms > maxDuration);
 
