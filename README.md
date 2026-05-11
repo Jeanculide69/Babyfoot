@@ -1,6 +1,6 @@
-# ⚽ Star Wars Babyfoot : Master Console V2.6 🚀
+# ⚽ Star Wars Babyfoot : Master Console V3.0 FINAL 🚀
 
-![Version](https://img.shields.io/badge/Version-2.6-gold?style=for-the-badge&logo=starwars)
+![Version](https://img.shields.io/badge/Version-3.0_Final-gold?style=for-the-badge&logo=starwars)
 ![Platform](https://img.shields.io/badge/Platform-ESP32-blue?style=for-the-badge&logo=espressif)
 ![Status](https://img.shields.io/badge/Status-Stable%20&%20Deploiement-success?style=for-the-badge)
 
@@ -63,9 +63,12 @@ Le firmware est structuré pour maximiser la performance du dual-core de l'ESP32
 
 ---
 
+## 📝 Journal des Modifications (V3.0 FINAL)
+*   ✅ **LED Color Fix** : Correction de l'ordre des couleurs (Bleu/Vert) pour compatibilité hardware.
+*   ✅ **Timing Optimization** : Transition jaune accélérée sur les moments critiques du jeu.
+*   ✅ **Security** : Suppression totale des identifiants personnels du code source.
+
 ## 📝 Journal des Modifications (V2.6)
-*   ✅ **Gamelle Fix** : Système de validation 3s avec retour immédiat.
-*   ✅ **Audio Update** : Son "Demi" basculé sur le SFX 008.
 
 ## 📝 Journal des Modifications (V2.5 FINAL)
 

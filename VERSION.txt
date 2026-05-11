@@ -1,3 +1,18 @@
+VERSION 3.0 FINAL - 11/05/2026
+- Correction critique de l'ordre des couleurs LED (Bleu JEDI restauré)
+- Amélioration des timings : Transition JAUNE accélérée sur Balle de Match (3.5s)
+- Ajout de la transition JAUNE sur l'animation DEMI (après 3s)
+- Sécurisation du code source : Suppression des identifiants Wi-Fi en dur
+- Version de production finale prête pour déploiement GitHub
+
+VERSION 2.8 - 11/05/2026
+- Nouveau moteur Ambilight "Spectacle" avec effets de traînée (fadeAll)
+- Inversion complète des positions (Bleu à droite, Rouge à gauche) pour hardware
+- Synchronisation parfaite des animations GIF et Ambilight
+- Optimisation mémoire tournoi (32KB JSON buffer)
+- Correction bug enregistrement scores tournoi
+- Amélioration de la réactivité du portail web en mode AP
+
 VERSION 2.6 - 11/05/2026
 - Correction bug GAMELLE : Système de validation différée (500ms) pour éviter les blocages par lockout
 - Priorité au BUT si détecté juste après une gamelle (comportement version legacy)

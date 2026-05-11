@@ -16,29 +16,55 @@ String team2_name = "SITH";
 bool tournament_mode = false; // Mode classique par défaut au démarrage (affiche la veille)
 File fsUploadFile;
 
-// --- CONFIG WIFI (PAR DEFAUT) ---
 String wifi_ssid = "VOTRE_SSID";
 String wifi_pass = "VOTRE_PASSWORD";
+volatile bool is_updating = false; 
 const byte DNS_PORT = 53;
 DNSServer dnsServer;
 bool is_ap_mode = false;
 
+// --- PROTECTION MULTI-CŒUR ---
+portMUX_TYPE stateMutex = portMUX_INITIALIZER_UNLOCKED;
+SemaphoreHandle_t audioMutex;
+SemaphoreHandle_t fsMutex;
+
 void loadWiFiConfig() {
+  // Valeurs par défaut (en dur)
+  wifi_ssid = "VOTRE_SSID";
+  wifi_pass = "VOTRE_PASSWORD";
+
   if (LittleFS.exists("/wifi.json")) {
-    File f = LittleFS.open("/wifi.json", "r");
-    if (f) {
-      StaticJsonDocument<256> doc;
-      DeserializationError err = deserializeJson(doc, f);
-      if (!err) {
-        if (doc.containsKey("ssid")) wifi_ssid = doc["ssid"].as<String>();
-        if (doc.containsKey("pass")) wifi_pass = doc["pass"].as<String>();
+    if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+      File f = LittleFS.open("/wifi.json", "r");
+      if (f) {
+        StaticJsonDocument<256> doc;
+        DeserializationError err = deserializeJson(doc, f);
+        if (!err) {
+          // On ne charge depuis le fichier que si les champs sont présents
+          // Mais l'utilisateur a demandé du "en dur", donc on pourrait même ignorer ici.
+          // Pour l'instant on garde la possibilité de charger SI le fichier est valide.
+          if (doc.containsKey("ssid") && doc["ssid"].as<String>() != "VOTRE_SSID") {
+             wifi_ssid = doc["ssid"].as<String>();
+          }
+          if (doc.containsKey("pass") && doc["pass"].as<String>() != "VOTRE_PASSWORD") {
+             wifi_pass = doc["pass"].as<String>();
+          }
+        }
+        f.close();
       }
-      f.close();
+      xSemaphoreGive(fsMutex);
     }
   }
+  
+  // Forçage final pour être sûr (demande utilisateur)
+  wifi_ssid = "VOTRE_SSID";
+  wifi_pass = "VOTRE_PASSWORD";
 }
 
+
+
 void saveWiFiConfig(String s, String p) {
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
   File f = LittleFS.open("/wifi.json", "w");
   if (f) {
     StaticJsonDocument<256> doc;
@@ -47,12 +73,9 @@ void saveWiFiConfig(String s, String p) {
     serializeJson(doc, f);
     f.close();
   }
+  xSemaphoreGive(fsMutex);
 }
 
-// --- PROTECTION MULTI-CŒUR ---
-portMUX_TYPE stateMutex = portMUX_INITIALIZER_UNLOCKED;
-SemaphoreHandle_t audioMutex;
-SemaphoreHandle_t fsMutex;
 
 // --- LOGS SYSTÈME ---
 String system_logs[20];
@@ -82,12 +105,12 @@ void addTvEvent(String m) {
 
 // --- MOTEUR DE TOURNOI C++ (Backend-Driven) ---
 void updateTournamentProgress(int s1, int s2) {
+  addLog("Tournoi: Appel de mise a jour (" + String(s1) + "-" + String(s2) + ") | Mode: " + String(tournament_mode));
   if (!tournament_mode) return;
-  addLog("Tournoi: Debut mise a jour avec scores " + String(s1) + "-" + String(s2));
 
-  // 1. Prendre le Mutex pour TOUTE l'operation (Lecture + Ecriture)
-  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-    addLog("Tournoi: FS occupe (Mutex Timeout)");
+  // 1. Prendre le Mutex avec un timeout plus long (5s) pour laisser passer les lectures GIF
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    addLog("Tournoi: FS occupe (Mutex Timeout 5s)");
     return;
   }
 
@@ -112,25 +135,25 @@ void updateTournamentProgress(int s1, int s2) {
     return;
   }
 
-  DynamicJsonDocument doc(16384); 
-  DeserializationError error = deserializeJson(doc, f);
+  DynamicJsonDocument* doc = new DynamicJsonDocument(32768); 
+  DeserializationError error = deserializeJson(*doc, f);
   f.close();
 
   if (error) {
+    delete doc;
     xSemaphoreGive(fsMutex);
     addLog("Tournoi: Erreur JSON: " + String(error.c_str()));
     return;
   }
-
-  // 3. Mise a jour des donnees en RAM
-  if (doc.containsKey("activeMatch") && !doc["activeMatch"].isNull()) {
-    int r = doc["activeMatch"]["r"];
-    int m = doc["activeMatch"]["m"];
+  
+  // Utilisation via (*doc)
+  if ((*doc).containsKey("activeMatch") && !(*doc)["activeMatch"].isNull()) {
+    int r = (*doc)["activeMatch"]["r"];
+    int m = (*doc)["activeMatch"]["m"];
     addLog("Tournoi: Match actif trouve: [" + String(r) + "][" + String(m) + "]");
     
-    // On verifie que la structure est coherente
-    if (r < (int)doc["rounds"].size() && m < (int)doc["rounds"][r].size()) {
-      JsonObject match = doc["rounds"][r][m];
+    if (r < (int)(*doc)["rounds"].size() && m < (int)(*doc)["rounds"][r].size()) {
+      JsonObject match = (*doc)["rounds"][r][m];
       match["s1"] = s1;
       match["s2"] = s2;
       int winner = (s1 > s2) ? 1 : 2;
@@ -139,74 +162,58 @@ void updateTournamentProgress(int s1, int s2) {
       String winnerName = (winner == 1) ? match["t1"].as<String>() : match["t2"].as<String>();
       addLog("Tournoi: Vainqueur: " + winnerName);
 
-      // Avancement automatique vers le round suivant
-      if (r + 1 < (int)doc["rounds"].size()) {
+      if (r + 1 < (int)(*doc)["rounds"].size()) {
         int nextM = m / 2;
-        addLog("Tournoi: Avancement vers [" + String(r+1) + "][" + String(nextM) + "]");
         if (m % 2 == 0) {
-            doc["rounds"][r + 1][nextM]["t1"] = winnerName;
-            addLog("Tournoi: " + winnerName + " place en T1 du match suivant");
+            (*doc)["rounds"][r + 1][nextM]["t1"] = winnerName;
         } else {
-            doc["rounds"][r + 1][nextM]["t2"] = winnerName;
-            addLog("Tournoi: " + winnerName + " place en T2 du match suivant");
+            (*doc)["rounds"][r + 1][nextM]["t2"] = winnerName;
         }
-      } else {
-        addLog("Tournoi: FINALE TERMINEE !");
       }
 
-      // Desactiver le match actif
-      doc.remove("activeMatch"); 
-      addLog("Tournoi: Match actif supprime du JSON");
-
-      // 4. Ecriture securisee (on n'ouvre en "w" que maintenant)
-      addLog("Tournoi: Ouverture fichier pour ecriture...");
+      (*doc).remove("activeMatch"); 
       f = LittleFS.open("/tournament.json", "w");
       if (f) {
-        if (serializeJson(doc, f) == 0) {
-          addLog("Tournoi: ERREUR CRITIQUE SERIALISATION !");
-        } else {
-          addLog("Tournoi: Sauvegarde OK (" + String(f.size()) + " octets)");
-        }
+        serializeJson(*doc, f);
         f.close();
-      } else {
-        addLog("Tournoi: Erreur ouverture mode 'w'");
       }
-    } else {
-      addLog("Tournoi: Indices r/m hors limites !");
     }
   } else {
     addLog("Tournoi: Aucun activeMatch dans le JSON");
   }
-
+  
+  delete doc;
   xSemaphoreGive(fsMutex);
   addLog("Tournoi: Fin de procedure");
 }
 
 // --- CHARGEMENT AUTOMATIQUE DU PROCHAIN MATCH ---
 bool autoLoadNextMatch() {
-  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-    addLog("Auto-Load: FS occupe");
+  addLog("Auto-Load: Recherche prochain match...");
+  if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    addLog("Auto-Load: FS occupe (Timeout 5s)");
     return false;
   }
   
   File f = LittleFS.open("/tournament.json", "r");
   if (!f) { xSemaphoreGive(fsMutex); return false; }
   
-  DynamicJsonDocument doc(16384);
-  DeserializationError error = deserializeJson(doc, f);
+  DynamicJsonDocument* doc = new DynamicJsonDocument(32768);
+  DeserializationError error = deserializeJson(*doc, f);
   f.close();
 
   bool found = false;
   if (!error) {
-    for (int r = 0; r < (int)doc["rounds"].size() && !found; r++) {
-      for (int m = 0; m < (int)doc["rounds"][r].size() && !found; m++) {
-        JsonObject match = doc["rounds"][r][m];
+    for (int r = 0; r < (int)(*doc)["rounds"].size() && !found; r++) {
+      for (int m = 0; m < (int)(*doc)["rounds"][r].size() && !found; m++) {
+        JsonObject match = (*doc)["rounds"][r][m];
         if (match["winner"].isNull() && !match["t1"].isNull() && !match["t2"].isNull() && match["t1"] != "BYE" && match["t2"] != "BYE") {
           team1_name = match["t1"].as<String>();
           team2_name = match["t2"].as<String>();
           
-          doc["activeMatch"]["r"] = r;
-          doc["activeMatch"]["m"] = m;
+          if ((*doc)["activeMatch"].isNull()) (*doc).createNestedObject("activeMatch");
+          (*doc)["activeMatch"]["r"] = r;
+          (*doc)["activeMatch"]["m"] = m;
           found = true;
           addLog("Auto-Load: " + team1_name + " vs " + team2_name);
         }
@@ -215,12 +222,13 @@ bool autoLoadNextMatch() {
     
     if (found) {
       f = LittleFS.open("/tournament.json", "w");
-      if (f) { serializeJson(doc, f); f.close(); }
+      if (f) { serializeJson(*doc, f); f.close(); }
     } else {
       tournament_mode = false;
       addLog("Tournoi: CHAMPIONNAT TERMINE !");
     }
   }
+  delete doc;
   xSemaphoreGive(fsMutex);
   return found;
 }
@@ -290,6 +298,13 @@ void setup() {
   addLog("Systeme Pret ! babyfoot.local");
   Serial.println("[SYSTEM] Ready.");
   
+  // Initialisation LittleFS (AVANT loadWiFiConfig !)
+  if(!LittleFS.begin(true)){
+    Serial.println("[SYSTEM] LittleFS Mount Failed");
+  } else {
+    Serial.println("[SYSTEM] LittleFS Mounted");
+  }
+  
   // --- CHARGEMENT CONFIG WIFI ---
   loadWiFiConfig();
   
@@ -326,7 +341,11 @@ void setup() {
 
   // --- ROUTES EMBARQUÉES (INSTANTANÉES) ---
   server.on("/", HTTP_GET, []() {
-    server.send_P(200, "text/html", INDEX_HTML);
+    if (is_ap_mode) {
+      server.send_P(200, "text/html", AP_HTML);
+    } else {
+      server.send_P(200, "text/html", INDEX_HTML);
+    }
   });
 
   server.on("/tv", HTTP_GET, []() {
@@ -346,9 +365,12 @@ void setup() {
   });
 
   server.on("/api/list_files", HTTP_GET, []() {
+    if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+      server.send(503, "text/plain", "FS Busy"); return;
+    }
     String output = "[";
     File root = LittleFS.open("/", "r");
-    if (!root) { server.send(500, "text/plain", "Error opening root"); return; }
+    if (!root) { xSemaphoreGive(fsMutex); server.send(500, "text/plain", "Error opening root"); return; }
     File file = root.openNextFile();
     while(file){
         if (output != "[") output += ",";
@@ -356,11 +378,16 @@ void setup() {
         file = root.openNextFile();
     }
     output += "]";
+    xSemaphoreGive(fsMutex);
     server.send(200, "application/json", output);
   });
 
   server.on("/api/format_fs", HTTP_GET, []() {
+    if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+      server.send(503, "text/plain", "FS Busy"); return;
+    }
     LittleFS.format();
+    xSemaphoreGive(fsMutex);
     server.send(200, "text/plain", "LittleFS formatté avec succès. Redémarrez l'ESP32.");
   });
 
@@ -368,9 +395,14 @@ void setup() {
     if (server.hasArg("filename")) {
       String filename = server.arg("filename");
       if (!filename.startsWith("/")) filename = "/" + filename;
+      if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
+        server.send(503, "text/plain", "FS Busy"); return;
+      }
       if (LittleFS.remove(filename)) {
+        xSemaphoreGive(fsMutex);
         server.send(200, "text/plain", "Fichier supprime");
       } else {
+        xSemaphoreGive(fsMutex);
         server.send(500, "text/plain", "Erreur de suppression");
       }
     } else {
@@ -386,13 +418,24 @@ void setup() {
       String filename = upload.filename;
       if (!filename.startsWith("/")) filename = "/" + filename;
       Serial.printf("Reception du GIF: %s\n", filename.c_str());
-      fsUploadFile = LittleFS.open(filename, "w");
+      if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+        fsUploadFile = LittleFS.open(filename, "w");
+        xSemaphoreGive(fsMutex);
+      }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
-      if (fsUploadFile) fsUploadFile.write(upload.buf, upload.currentSize);
+      if (fsUploadFile) {
+        if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          fsUploadFile.write(upload.buf, upload.currentSize);
+          xSemaphoreGive(fsMutex);
+        }
+      }
     } else if (upload.status == UPLOAD_FILE_END) {
       if (fsUploadFile) {
+        if (xSemaphoreTake(fsMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
           fsUploadFile.close();
-          Serial.println("Upload réussi !");
+          xSemaphoreGive(fsMutex);
+        }
+        Serial.println("Upload réussi !");
       }
     }
   });
@@ -623,11 +666,12 @@ void setup() {
   });
 
 
-  server.on("/api/save_wifi", HTTP_GET, []() {
+  server.on("/api/save_wifi", HTTP_POST, []() {
     String s = server.arg("ssid");
     String p = server.arg("pass");
     if (s != "") {
       saveWiFiConfig(s, p);
+      Serial.println("[WIFI] Identifiants sauvegardes: " + s);
       server.send(200, "text/plain", "OK");
       delay(2000);
       ESP.restart();
@@ -651,6 +695,9 @@ void setup() {
   }, []() {
     HTTPUpload& upload = server.upload();
     if (upload.status == UPLOAD_FILE_START) {
+      is_updating = true; 
+      if (matrix) matrix->clearScreen(); 
+      sendDFCommand(0x0E, 0x00, 0x00); // Stop AUDIO immédiat
       Serial.printf("Update Start: %s\n", upload.filename.c_str());
       if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { 
         Update.printError(Serial);
@@ -710,12 +757,7 @@ void setup() {
 
   HUB75_I2S_CFG mxconfig(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN, _pins);
 
-  // Initialisation LittleFS
-  if(!LittleFS.begin(true)){
-    Serial.println("[SYSTEM] LittleFS Mount Failed");
-  } else {
-    Serial.println("[SYSTEM] LittleFS Mounted");
-  }
+  // LittleFS déjà initialisé en début de setup()
 
   matrix = new MatrixPanel_I2S_DMA(mxconfig);
   matrix->begin();
@@ -736,7 +778,7 @@ void setup() {
   setupLEDs();
 
   // Lancer le serveur web sur le Core 0
-  xTaskCreatePinnedToCore(webTask, "WebTask", 8192, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(webTask, "WebTask", 12288, NULL, 1, NULL, 0);
 }
 
 // Tâche dédiée au serveur Web et WebSocket sur le Core 0
@@ -745,16 +787,20 @@ void webTask(void *pvParameters) {
     if (is_ap_mode) dnsServer.processNextRequest();
     webSocket.loop();
     server.handleClient();
-    vTaskDelay(pdMS_TO_TICKS(10)); // Retour à 10ms (V2.0) pour laisser plus d'air au stack WiFi
+    vTaskDelay(pdMS_TO_TICKS(is_ap_mode ? 2 : 10)); // V2.7: DNS plus réactif en mode AP
   }
 }
 
 
 
 void loop() {
+  if (is_updating) {
+    yield();
+    return;
+  }
   extern void handleGameLogic();
   extern void updateLEDs();
   handleGameLogic();
   updateLEDs();
-  yield(); // Plus réactif que delay(1)
+  yield();
 }

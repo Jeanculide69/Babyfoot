@@ -649,6 +649,8 @@ const char WIFI_HTML[] PROGMEM = R"rawliteral(
             <p>L'ESP32 va redémarrer et tenter de se connecter. Cherchez-le sur votre réseau local (babyfoot.local).</p>
         </div>
         <br>
+        <br>
+        <a href="/update" style="color:var(--gold); display:block; text-align:center; text-decoration:none; font-size:12px; margin-top:5px;">MISE À JOUR OTA</a>
         <a href="/" style="color:#8b949e; display:block; text-align:center; text-decoration:none; font-size:12px;">RETOUR CONSOLE</a>
     </div>
 
@@ -687,8 +689,11 @@ const char WIFI_HTML[] PROGMEM = R"rawliteral(
             document.getElementById('save-btn').disabled = true;
             document.getElementById('save-btn').innerText = "ENREGISTREMENT...";
 
-            fetch(`/api/save_wifi?ssid=${encodeURIComponent(ssid)}&pass=${encodeURIComponent(pass)}`)
-                .then(r => {
+            fetch('/api/save_wifi', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'ssid=' + encodeURIComponent(ssid) + '&pass=' + encodeURIComponent(pass)
+            }).then(r => {
                     document.getElementById('wifi-form').style.display = 'none';
                     document.getElementById('success').style.display = 'block';
                 });
@@ -718,7 +723,7 @@ const char UPDATE_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
     <div class="card">
-        <h1>MISE À JOUR V2.6</h1>
+        <h1>MISE À JOUR V2.7</h1>
         <p>Sélectionnez le fichier <b>.bin</b> compilé.</p>
         <form method='POST' action='/do_update' enctype='multipart/form-data' id='upload_form'>
             <input type='file' name='update' style="margin-bottom:20px;"><br>
@@ -933,6 +938,62 @@ const char LOGS_HTML[] PROGMEM = R"rawliteral(
         }
         setInterval(update, 3000); update();
     </script>
+</body>
+</html>
+)rawliteral";
+
+const char AP_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babyfoot Force - Setup</title>
+    <style>
+        :root { --gold: #ffe000; --bg: #0d1117; --card: rgba(22,27,34,0.9); --blue: #58a6ff; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: #c9d1d9; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { width: 90%; max-width: 400px; }
+        .logo { text-align: center; margin-bottom: 30px; }
+        .logo h1 { color: var(--gold); font-size: 1.6rem; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 20px rgba(255,224,0,0.3); }
+        .logo p { color: #8b949e; font-size: 0.85rem; margin-top: 5px; }
+        .card { background: var(--card); border: 1px solid #30363d; border-radius: 20px; padding: 25px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        .btn { display: flex; align-items: center; gap: 15px; padding: 18px 20px; background: #21262d; border: 1px solid #30363d; border-radius: 12px; color: white; text-decoration: none; font-weight: bold; font-size: 1rem; margin-bottom: 12px; transition: all 0.2s; }
+        .btn:last-child { margin-bottom: 0; }
+        .btn:hover { background: #30363d; transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .btn:active { transform: scale(0.98); }
+        .btn-wifi { border-color: var(--gold); }
+        .btn-wifi:hover { box-shadow: 0 0 20px rgba(255,224,0,0.2); }
+        .btn-icon { font-size: 1.5rem; width: 35px; text-align: center; }
+        .btn-label { flex: 1; }
+        .btn-label small { display: block; color: #8b949e; font-weight: normal; font-size: 0.75rem; margin-top: 2px; }
+        .version { text-align: center; margin-top: 20px; color: #30363d; font-size: 0.7rem; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>⚡ BABYFOOT FORCE</h1>
+            <p class="pulse">MODE CONFIGURATION</p>
+        </div>
+        <div class="card">
+            <a href="/wifi" class="btn btn-wifi">
+                <span class="btn-icon">📡</span>
+                <span class="btn-label">CONFIGURATION WIFI<small>Connecter a votre reseau</small></span>
+            </a>
+            <a href="/logs" class="btn">
+                <span class="btn-icon">📋</span>
+                <span class="btn-label">LOGS SYSTEME<small>Diagnostics et evenements</small></span>
+            </a>
+            <a href="/update" class="btn">
+                <span class="btn-icon">🔄</span>
+                <span class="btn-label">MISE A JOUR OTA<small>Flasher un nouveau firmware</small></span>
+            </a>
+        </div>
+        <div class="version">BABYFOOT FORCE V2.8</div>
+    </div>
 </body>
 </html>
 )rawliteral";

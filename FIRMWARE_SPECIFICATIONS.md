@@ -1,4 +1,4 @@
-# ⚽ BABYFOOT STAR WARS - MASTER CONSOLE V2.0 🌌
+# ⚽ BABYFOOT STAR WARS - MASTER CONSOLE V3.0 FINAL 🌌
 
 ## 🚨 RÈGLES D'OR (NE PAS MODIFIER SANS CONSENTEMENT)
 - **HUD LED MATRIX** : L'affichage, le centrage des scores et le HUD Star Wars sont finalisés. NE PAS TOUCHER à la logique de dessin ou aux coordonnées.
@@ -25,4 +25,4 @@
 - **IP AP** : 192.168.4.1
 
 ---
-*Dernière mise à jour : 09/05/2026 - Statut : STABLE V2.0*
+*Dernière mise à jour : 11/05/2026 - Statut : PRODUCTION FINAL V3.0*

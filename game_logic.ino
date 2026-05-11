@@ -118,8 +118,8 @@ volatile int pending_gam_player = 0; // 1 pour J1, 2 pour J2
 
 
 Particle particles[5];
-Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};
-Fighter jedi2 = {45, 31, 0, 0, C_RED, -1, 34};
+Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};  // P1 (JEDI/Bleu) à GAUCHE
+Fighter jedi2 = {45, 31, 0, 0, C_RED, -1, 34}; // P2 (SITH/Rouge) à DROITE
 Blaster blasters[4]; // Max 4 tirs simultanes
 
 extern void sendDFCommand(uint8_t cmd, uint8_t p1, uint8_t p2);
@@ -335,7 +335,7 @@ void updateBlasters() {
       if (random(0, 500) < 5) { // Spawn aléatoire
         blasters[i].active = true;
         blasters[i].color = (random(0, 2) == 0) ? C_BLUE : C_RED;
-        blasters[i].vx = (blasters[i].color == C_BLUE) ? 1.5 : -1.5;
+        blasters[i].vx = (blasters[i].color == C_BLUE) ? 1.5 : -1.5; // Bleu va vers la droite, Rouge vers la gauche
         blasters[i].x = (blasters[i].vx > 0) ? -5 : 68;
         blasters[i].y = random(27, 31);
       }
@@ -427,8 +427,8 @@ void score_screen_starwars(bool reset = false) {
         }
     }
 
-    if (color_p1 != C_BLACK) drawScoreCentered(score_p1, 0, 12, color_p1);
-    if (color_p2 != C_BLACK) drawScoreCentered(score_p2, 32, 12, color_p2);
+    if (color_p1 != C_BLACK) drawScoreCentered(score_p1, 0, 12, color_p1); // P1 (Bleu) à GAUCHE
+    if (color_p2 != C_BLACK) drawScoreCentered(score_p2, 32, 12, color_p2); // P2 (Rouge) à DROITE
     
     // Compteur de balles central miniaturise
     matrix->drawRect(25, 11, 14, 9, 0x4208); 
@@ -442,8 +442,8 @@ void score_screen_starwars(bool reset = false) {
   }
 
   // Affichage dynamique des noms (en dehors du bloc IF pour permettre le scroll permanent)
-  drawCenteredText(team1_name, 1, C_BLUE, 0, 31);   
-  drawCenteredText(team2_name, 1, C_RED, 32, 32);
+  drawCenteredText(team1_name, 1, C_BLUE, 0, 31);   // Team 1 à gauche
+  drawCenteredText(team2_name, 1, C_RED, 32, 32);  // Team 2 à droite
 
   // --- NETTOYAGE LARGE (y=26 a 31) ---
   static unsigned long lastCombat = 0;
@@ -485,13 +485,13 @@ void drawAnimStandby() {
   if (tournament_mode) {
     matrix->fillScreen(C_BLACK);
     
-    // 1. Team 1 - Haut Gauche (Zone 32px)
+    // 1. Team 1 (Bleu) - Haut Gauche
     drawCenteredText(team1_name, 0, C_BLUE, 0, 32);
     
-    // 2. VS - Milieu (Remonte de 10 a 8)
+    // 2. VS - Milieu
     drawCenteredText("VS", 8, C_WHITE, 0, 64);
     
-    // 3. Team 2 - Bas Droite (Zone 32px, Remonte de 18 a 16)
+    // 3. Team 2 (Rouge) - Bas Droite
     drawCenteredText(team2_name, 16, C_RED, 32, 32);
     
     // 4. OK - Sous Team 2 (Remonte de 26 a 24)
@@ -575,10 +575,13 @@ void pollGoalSensors() {
   bool edge_gaml = phys_gaml && !last_phys_gaml; last_phys_gaml = phys_gaml;
 
   // Déclencheur final : Front physique OU Simulation Web
-  bool g_r = edge_gr || sim_b2;
-  bool g_l = edge_gl || sim_b1;
-  bool gam_r = edge_gamr || sim_g2;
-  bool gam_l = edge_gaml || sim_g1;
+  // Pour P1 (Bleu/Gauche), le point vient du but de DROITE (g_r)
+  bool g_r = edge_gr || sim_b1;
+  // Pour P2 (Rouge/Droite), le point vient du but de GAUCHE (g_l)
+  bool g_l = edge_gl || sim_b2;
+  
+  bool gam_r = edge_gamr || sim_g1;
+  bool gam_l = edge_gaml || sim_g2;
 
   if (g_r) Serial.println("[SENSOR] BUT DROIT (P2)");
   if (g_l) Serial.println("[SENSOR] BUT GAUCHE (P1)");
@@ -787,8 +790,12 @@ void handleGameLogic() {
 
     // 1. DÉTECTION DES BUTS (PRIORITAIRES)
     if (millis() - lastGoalMs > 3000) {
-        if (bitRead(inputs, 11)) { // But Cote Gauche (Point pour P1)
-            pending_gam_ms = 0; // Annulation de toute gamelle suspectée
+        // --- DETECTION BUTS (LOGIQUE V2.5 RETABLIE) ---
+        if (bitRead(inputs, 13)) { // Ball dans but DROITE -> Point pour GAUCHE (P1/BLEU)
+            if (pending_gam_ms > 0 && pending_gam_player == 1) { 
+                addLog("BUT CONFIRME J1 (Annule Gamelle)"); 
+                pending_gam_ms = 0; 
+            }
             portENTER_CRITICAL(&stateMutex);
             last_points = 1 + waiting_goal;
             score_p1 += last_points; 
@@ -798,13 +805,16 @@ void handleGameLogic() {
 
             playSFX(SFX_BUT_J1); requestAnimation(ANIM_BUT_J1); 
             if (ball > 0) ball--; 
-            addLog("B1"); addTvEvent("B1");
+            addLog("But Bleu (JEDI) !"); addTvEvent("B1");
             raz_but();
             lastGoalMs = millis();
             matchAmbienceTriggered = true; 
         } 
-        else if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
-            pending_gam_ms = 0; // Annulation de toute gamelle suspectée
+        else if (bitRead(inputs, 11)) { // Ball dans but GAUCHE -> Point pour DROITE (P2/ROUGE)
+            if (pending_gam_ms > 0 && pending_gam_player == 2) { 
+                addLog("BUT CONFIRME J2 (Annule Gamelle)"); 
+                pending_gam_ms = 0; 
+            }
             portENTER_CRITICAL(&stateMutex);
             last_points = 1 + waiting_goal;
             score_p2 += last_points; 
@@ -814,7 +824,7 @@ void handleGameLogic() {
 
             playSFX(SFX_BUT_J2); requestAnimation(ANIM_BUT_J2); 
             if (ball > 0) ball--; 
-            addLog("B2"); addTvEvent("B2");
+            addLog("But Rouge (SITH) !"); addTvEvent("B2");
             raz_but();
             lastGoalMs = millis();
             matchAmbienceTriggered = true; 
@@ -825,20 +835,20 @@ void handleGameLogic() {
     // On lance l'animation et le son tout de suite pour la réactivité, 
     // mais on attend 500ms avant de valider le point pour laisser la priorité au but.
     if (millis() - lastGoalMs > 3000 && pending_gam_ms == 0) {
-        if (bitRead(inputs, 12)) { // Gamelle J1 (Côté Gauche)
+        if (bitRead(inputs, 14)) { // Gamelle Cote DROITE -> Pour J1 (BLEU)
             pending_gam_ms = millis();
             pending_gam_player = 1;
             playSFX(SFX_GAMELLE); 
             requestAnimation(ANIM_GAM_J1);
-            addTvEvent("G1"); 
+            addLog("GAMELLE J1 !");
             Serial.println("[GAME] Gamelle J1 détectée, feedback immédiat...");
         } 
-        else if (bitRead(inputs, 14)) { // Gamelle J2 (Côté Droit)
+        else if (bitRead(inputs, 12)) { // Gamelle Cote GAUCHE -> Pour J2 (ROUGE)
             pending_gam_ms = millis();
             pending_gam_player = 2;
             playSFX(SFX_GAMELLE); 
             requestAnimation(ANIM_GAM_J2);
-            addTvEvent("G2");
+            addLog("GAMELLE J2 !");
             Serial.println("[GAME] Gamelle J2 détectée, feedback immédiat...");
         }
     }

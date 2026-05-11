@@ -5,8 +5,8 @@
 #define LED_PIN_2 14
 #define LED_COUNT 40
 
-Adafruit_NeoPixel strip1(LED_COUNT, LED_PIN_1, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip2(LED_COUNT, LED_PIN_2, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip1(LED_COUNT, LED_PIN_1, NEO_BRG + NEO_KHZ800);
+Adafruit_NeoPixel strip2(LED_COUNT, LED_PIN_2, NEO_BRG + NEO_KHZ800);
 
 extern bool isAnimationActive();
 extern volatile unsigned long statut_game;

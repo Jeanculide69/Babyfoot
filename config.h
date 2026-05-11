@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define VERSION_STR "V2.6 - 11/05/2026"
+#define VERSION_STR "V3.0 - 11/05/2026"
 
 #include <Arduino.h>
 
