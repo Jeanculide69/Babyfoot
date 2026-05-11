@@ -718,7 +718,7 @@ const char UPDATE_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
     <div class="card">
-        <h1>MISE À JOUR V1.1</h1>
+        <h1>MISE À JOUR V2.6</h1>
         <p>Sélectionnez le fichier <b>.bin</b> compilé.</p>
         <form method='POST' action='/do_update' enctype='multipart/form-data' id='upload_form'>
             <input type='file' name='update' style="margin-bottom:20px;"><br>
