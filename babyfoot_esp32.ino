@@ -17,8 +17,8 @@ bool tournament_mode = false; // Mode classique par défaut au démarrage (affic
 File fsUploadFile;
 
 // --- CONFIG WIFI (PAR DEFAUT) ---
-String wifi_ssid = "Livebox-6E60";
-String wifi_pass = "gQszNPUotXSt7jKKH3";
+String wifi_ssid = "VOTRE_SSID";
+String wifi_pass = "VOTRE_PASSWORD";
 const byte DNS_PORT = 53;
 DNSServer dnsServer;
 bool is_ap_mode = false;
