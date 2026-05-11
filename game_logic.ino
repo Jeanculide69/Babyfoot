@@ -113,6 +113,9 @@ volatile int more_buttom_start = 0;
 volatile int ok_buttom_start = 0;
 volatile int waiting_goal = 0;
 volatile int last_points = 0;
+volatile unsigned long pending_gam_ms = 0;
+volatile int pending_gam_player = 0; // 1 pour J1, 2 pour J2
+
 
 Particle particles[5];
 Fighter jedi1 = {15, 31, 0, 0, C_BLUE, 1, 30};
@@ -543,12 +546,12 @@ void handleAction(String act) {
         score_p1 -= last_points; waiting_goal = last_points; 
         bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
         addLog("PORTAIL: DEMI J1"); addTvEvent("demi_j1");
-        requestAnimation(ANIM_DEMI); playSFX(9, false);
+        requestAnimation(ANIM_DEMI); playSFX(SFX_MATCH_PT, false);
     } else if (bitRead(statut_game, LAST_GOAL_P2)) {
         score_p2 -= last_points; waiting_goal = last_points; 
         bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
         addLog("PORTAIL: DEMI J2"); addTvEvent("demi_j2");
-        requestAnimation(ANIM_DEMI); playSFX(9, false);
+        requestAnimation(ANIM_DEMI); playSFX(SFX_MATCH_PT, false);
     }
   }
   if (act == "BIERE") { playSFX(SFX_GAMELLE, true); requestAnimation(5); } // ANIM_BIERE = 5, SFX = 4
@@ -781,11 +784,14 @@ void handleGameLogic() {
 
     // Buts et Gamelles (Bits 11 a 14)
     static unsigned long lastGoalMs = 0;
-    if (millis() - lastGoalMs > 3000) { // Lockout de 3s pour éviter les doubles comptes
+
+    // 1. DÉTECTION DES BUTS (PRIORITAIRES)
+    if (millis() - lastGoalMs > 3000) {
         if (bitRead(inputs, 11)) { // But Cote Gauche (Point pour P1)
+            pending_gam_ms = 0; // Annulation de toute gamelle suspectée
             portENTER_CRITICAL(&stateMutex);
             last_points = 1 + waiting_goal;
-            score_p1 += last_points; // GAUCHE -> P1
+            score_p1 += last_points; 
             waiting_goal = 0; bitClear(statut_game, DEMI);
             bitSet(statut_game, LAST_GOAL_P1); bitClear(statut_game, LAST_GOAL_P2);
             portEXIT_CRITICAL(&stateMutex);
@@ -797,10 +803,11 @@ void handleGameLogic() {
             lastGoalMs = millis();
             matchAmbienceTriggered = true; 
         } 
-        if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
+        else if (bitRead(inputs, 13)) { // But Cote Droit (Point pour P2)
+            pending_gam_ms = 0; // Annulation de toute gamelle suspectée
             portENTER_CRITICAL(&stateMutex);
             last_points = 1 + waiting_goal;
-            score_p2 += last_points; // DROITE -> P2
+            score_p2 += last_points; 
             waiting_goal = 0; bitClear(statut_game, DEMI);
             bitSet(statut_game, LAST_GOAL_P2); bitClear(statut_game, LAST_GOAL_P1);
             portEXIT_CRITICAL(&stateMutex);
@@ -812,29 +819,51 @@ void handleGameLogic() {
             lastGoalMs = millis();
             matchAmbienceTriggered = true; 
         } 
-        
-        // Gamelles (Regle de la Penalite : Retire un point a l'ADVERSAIRE)
-        if (bitRead(inputs, 12)) { // Gamelle Cote Gauche (Faite par P1)
-            portENTER_CRITICAL(&stateMutex);
-            score_p2--; // P2 perd un point
-            portEXIT_CRITICAL(&stateMutex);
-            playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J1); 
-            addLog("G1"); addTvEvent("G1");
-            raz_but();
-            lastGoalMs = millis();
-            matchAmbienceTriggered = true; 
-        } 
-        if (bitRead(inputs, 14)) { // Gamelle Cote Droit (Faite par P2)
-            portENTER_CRITICAL(&stateMutex);
-            score_p1--; // P1 perd un point
-            portEXIT_CRITICAL(&stateMutex);
-            playSFX(SFX_GAMELLE); requestAnimation(ANIM_GAM_J2); 
-            addLog("G2"); addTvEvent("G2");
-            raz_but();
-            lastGoalMs = millis();
-            matchAmbienceTriggered = true; 
-        } 
     }
+
+    // 2. DÉTECTION DES GAMELLES (RETOUR IMMÉDIAT + SCORE DIFFÉRÉ)
+    // On lance l'animation et le son tout de suite pour la réactivité, 
+    // mais on attend 500ms avant de valider le point pour laisser la priorité au but.
+    if (millis() - lastGoalMs > 3000 && pending_gam_ms == 0) {
+        if (bitRead(inputs, 12)) { // Gamelle J1 (Côté Gauche)
+            pending_gam_ms = millis();
+            pending_gam_player = 1;
+            playSFX(SFX_GAMELLE); 
+            requestAnimation(ANIM_GAM_J1);
+            addTvEvent("G1"); 
+            Serial.println("[GAME] Gamelle J1 détectée, feedback immédiat...");
+        } 
+        else if (bitRead(inputs, 14)) { // Gamelle J2 (Côté Droit)
+            pending_gam_ms = millis();
+            pending_gam_player = 2;
+            playSFX(SFX_GAMELLE); 
+            requestAnimation(ANIM_GAM_J2);
+            addTvEvent("G2");
+            Serial.println("[GAME] Gamelle J2 détectée, feedback immédiat...");
+        }
+    }
+
+    // 3. VALIDATION FINALE DES GAMELLES (Après GAMELLE_VALIDATION_MS sans but)
+    if (pending_gam_ms > 0 && (millis() - pending_gam_ms > GAMELLE_VALIDATION_MS)) {
+
+        portENTER_CRITICAL(&stateMutex);
+        if (pending_gam_player == 1) {
+            score_p2--; // P2 perd un point
+            addLog("G1: Score validé");
+        } else {
+            score_p1--; // P1 perd un point
+            addLog("G2: Score validé");
+        }
+        portEXIT_CRITICAL(&stateMutex);
+        
+        raz_but();
+        lastGoalMs = millis(); // Verrouillage après validation
+        pending_gam_ms = 0;
+        matchAmbienceTriggered = true;
+        Serial.println("[GAME] Gamelle confirmée au score.");
+    }
+
+
 
     // --- LOGIQUE DU DEMI (+ et - ensemble) ---
     // On utilise les bits d'état (1 et 2) et non les fronts (9 et 10) pour plus de souplesse
@@ -844,13 +873,13 @@ void handleGameLogic() {
             waiting_goal = last_points; 
             bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P1);
             addLog("DEMI J1: Point mis en attente."); addTvEvent("demi_j1");
-            requestAnimation(ANIM_DEMI); playSFX(9, false);
+            requestAnimation(ANIM_DEMI); playSFX(SFX_MATCH_PT, false);
         } else if (bitRead(statut_game, LAST_GOAL_P2)) {
             score_p2 -= last_points; 
             waiting_goal = last_points; 
             bitSet(statut_game, DEMI); bitClear(statut_game, LAST_GOAL_P2);
             addLog("DEMI J2: Point mis en attente."); addTvEvent("demi_j2");
-            requestAnimation(ANIM_DEMI); playSFX(9, false);
+            requestAnimation(ANIM_DEMI); playSFX(SFX_MATCH_PT, false);
         }
     }
 

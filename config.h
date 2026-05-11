@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define VERSION_STR "V2.5 FINAL - 11/05/2026"
+#define VERSION_STR "V2.6 - 11/05/2026"
 
 #include <Arduino.h>
 
@@ -75,6 +75,9 @@
 #define SFX_VIC_J2     6
 #define SFX_AMBIANCE   7
 #define SFX_MATCH_PT   8
+
+#define GAMELLE_VALIDATION_MS 3000    // Temps d'attente pour confirmer une gamelle (vs but)
+
 
 #define C_BLACK   0x0000
 #define C_WHITE   0xFFFF

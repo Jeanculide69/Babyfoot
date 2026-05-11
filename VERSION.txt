@@ -1,4 +1,9 @@
-VERSION 2.5 FINAL - STAR WARS MASTER CONSOLE (11/05/2026)
+VERSION 2.6 - 11/05/2026
+- Correction bug GAMELLE : Système de validation différée (500ms) pour éviter les blocages par lockout
+- Priorité au BUT si détecté juste après une gamelle (comportement version legacy)
+- Mise à jour SFX DEMI : Utilisation du son 008 (SFX_MATCH_PT) au lieu du 009
+- Nettoyage du code de détection des capteurs
+- VERSION 2.5 FINAL - STAR WARS MASTER CONSOLE (11/05/2026)
 - Correction transition match : Toujours attendre confirmation OK entre deux matchs
 - Affichage automatique de l'écran VS/Attente après la pause Bière
 - Synchronisation audio : Musique de match déclenchée par le bouton OK
